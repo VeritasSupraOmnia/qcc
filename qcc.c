@@ -73,10 +73,10 @@ static eflgsz error_flags=0;
 
 
 //for testing
-static char * wanted_code=	"int main(){return 0;}";
+static char * wanted_code=	"int main(int var,int val){return 0;}";
 
 //needed for full functioning
-static char * qc_code=		"{#dmain[] 0 ret}";
+static char * qc_code=		"{#dmain[#d var, val] 0 ret}";
 int qc_size;
 char * result_code;
 int result_size=	0;
@@ -115,7 +115,11 @@ static inline int addType(char * start){{{
 	//Start is pointer at offset of the new type
 	//declaration. Directly adds the type, with a following
 	//space, to the output allocation.
-
+	
+	//TODO: make a type lookup table 
+	//(qcc type string array to c type string array)
+	//This way I can expand the amount of types dynamically,
+	//as I should do.
 	char * temp;int i=0;
 	switch(start[0]){
 		case 'd': 
@@ -194,7 +198,10 @@ static inline int addArgs(char * start){{{
 
 		//check for varlists
 		if (start[i]==','){{{
-			//
+			//push comma right away
+			pushToOutput(start+i,1);
+			i++;
+
 			//clear whatever whitespace there is
 			if (isWhitespace(start+i))
 				i+=toSymbol(start+i);
@@ -203,8 +210,7 @@ static inline int addArgs(char * start){{{
 			//Checking that a previous type and ID were
 			//declared within this var list and the comma
 			//isn't in the beginning of a new list.
-			if(	(argstate&argstate_inlist)	|| 
-				(argstate&argstate_done_ID))
+			if(!(argstate&argstate_done_ID))
 				//return the local location and set the
 				//parse fail flag for error reporting later
 				//on.
@@ -213,7 +219,6 @@ static inline int addArgs(char * start){{{
 				return i;
 
 			//add comma to C output
-			pushToOutput(start+i,1);
 			
 			//add The last type to the output
 			addType(lastTypeLoc);
@@ -221,20 +226,26 @@ static inline int addArgs(char * start){{{
 			//add the next ID in the varlist
 			i++,addId(start+i);
 
+			continue;
+		}}}
 
-		}}}else
 		//check for new type
 		if(start[i]=='#'){{{
-			lastTypeLoc=start+1;
-			i+=addType(start+1);
+			i++;
+			lastTypeLoc=start+i;
+			i+=addType(lastTypeLoc);
 			//clear argstate so that 
 			argstate^=argstate;
-			
+			continue;
 		}}}
+
+
 		//do id parsing
-		else if (maybeId(start+i)){
+		if (maybeId(start+i)){{{
 			i+=addId(start+i);
-		}else break;
+			argstate|=argstate_done_ID;
+			continue;
+		}}}
 
 		i++;
 	}
