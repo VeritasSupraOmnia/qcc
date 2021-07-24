@@ -43,14 +43,15 @@
 #define prs_was_id			0x10
 #define prs_was_const		0x20
 #define prs_was_op			0x40
+#define prs_was_arg			0x40
 //need semi-colon to end the statement
-#define prs_need_semi		0x80
+#define prs_need_semi		0x100
 //passthrough to C mode
-#define prs_c_passth		0x100
+#define prs_c_passth		0x200
 //asm conversion
-#define prs_asm				0x200
+#define prs_asm				0x400
 //tells the parser that an error has occurred.
-#define prs_fail			0x400
+#define prs_fail			0x800
 
 #define pflgsz U2
 static pflgsz parse_flags=0;
@@ -75,9 +76,22 @@ static eflgsz error_flags=0;
 //for testing
 static char * wanted_code=	"int main(int var,int val){return 0;}";
 
-//needed for full functioning
-static char * qc_code=		"{#dmain[#d var, val] 0 ret}";
+//Main data in buffer
+//TODO: When the transpiler moves to files, make this start
+//as null.
+static char * qc_code=		"{#dmain[#dvar,val] 0 ret}";
 int qc_size;
+
+//For adding previous IDs to tracking arrays.
+char * plastId;
+int slastId;
+
+//For keeping track of function name strings.
+char ** function_array;
+int function_array_size;
+int *function_array_string_sizes;
+
+//For saving output code to.
 char * result_code;
 int result_size=	0;
 
@@ -108,6 +122,9 @@ int pushToOutput(char* symbol,int size){{{
 	bcopy(symbol,&result_code[result_size],size);
 	result_size+=	size;
 	return 0;
+}}}
+
+int pushFuncName(char* symbol,int size){{{
 }}}
 
 static inline int addType(char * start){{{
@@ -183,7 +200,7 @@ static inline int addArgs(char * start){{{
 
 	//for doing comma based type repitition for multiple
 	//variable identifiers as well as error checking.
-	char* lastTypeLoc=(char*)0;
+	char* lastArgTypeLoc=(char*)0;
 	char* lastIdLoc=(char*)0;
 
 	U1 argstate=0;
@@ -210,21 +227,21 @@ static inline int addArgs(char * start){{{
 			//Checking that a previous type and ID were
 			//declared within this var list and the comma
 			//isn't in the beginning of a new list.
-			if(!(argstate&argstate_done_ID))
+			if(argstate&argstate_done_ID==0){
 				//return the local location and set the
 				//parse fail flag for error reporting later
 				//on.
 				parse_flags|=prs_fail,
 				error_flags|=err_no_type_for_varlist;
-				return i;
+				return i;}
 
 			//add comma to C output
 			
 			//add The last type to the output
-			addType(lastTypeLoc);
+			addType(lastArgTypeLoc);
 				
 			//add the next ID in the varlist
-			i++,addId(start+i);
+			i+=addId(start+i);
 
 			continue;
 		}}}
@@ -232,8 +249,8 @@ static inline int addArgs(char * start){{{
 		//check for new type
 		if(start[i]=='#'){{{
 			i++;
-			lastTypeLoc=start+i;
-			i+=addType(lastTypeLoc);
+			lastArgTypeLoc=start+i;
+			i+=addType(lastArgTypeLoc);
 			//clear argstate so that 
 			argstate^=argstate;
 			continue;
@@ -269,6 +286,12 @@ int main(){
 start:
 		int size=0;	
 
+		//If there's a new arglist and a new scope, that
+		//means that this curly bracket is needed in the C
+		//output.
+		if(parse_flags&prs_was_arg&&parse_flags&prs_new_scope){
+			char *c="{";pushToOutput(c,1);i++;parse_flags^=prs_was_arg;}
+
 		//For receiving symbol data for this iteration to
 		//add to the result_code string.
 		char *temp=&qc_code[i];
@@ -285,12 +308,8 @@ start:
 			parse_flags^=prs_new_id;
 			if (isWhitespace(temp))
 				i+=toSymbol(temp),parse_flags|=prs_ws_sep_sym;
-		}/*else if(
-				(parse_flags & prs_was_id)		&&
-				(parse_flags & prs_new_scope))	{
-			
+		}
 
-		}*/
 		temp=&qc_code[i];
 		switch(*temp){ 
 			case '#':
@@ -306,7 +325,8 @@ start:
 						pushToOutput(brkt,1);
 						break;
 			case '[':
-						i+=addArgs(temp+1)+1;
+						i+=addArgs(temp+1);
+						parse_flags|=prs_was_arg;
 						break;
 		}
 	}
