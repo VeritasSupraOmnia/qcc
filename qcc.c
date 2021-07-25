@@ -68,6 +68,7 @@ int scope=0;
 
 //error flags{{{
 #define err_no_type_for_varlist 0x01
+#define err_type_does_not_exist 0x01
 
 #define eflgsz U2
 static eflgsz error_flags=0;
@@ -80,7 +81,7 @@ static char * wanted_code=	"int main(int var,int val){return 0;}";
 //Main data in buffer
 //TODO: When the transpiler moves to files, make this start
 //as null.
-static char * qc_code=		"{#dmain[#dvar,val]ret 0}";
+static char * qc_code=		"{#dmain[#dargc#ppbargv]ret 0}";
 int qc_size;
 
 //For adding previous IDs to tracking arrays.
@@ -138,15 +139,36 @@ static inline int addType(char * start){{{
 	//(qcc type string array to c type string array)
 	//This way I can expand the amount of types dynamically,
 	//as I should do.
-	char * temp;int i=0;
-	switch(start[0]){
-		case 'd': 
-				temp="int "; i++;
-				break;
-		default: break;
-	}
+	U1 c;U1 pointers=0;int i=0;
+	do{
+		U1 * temp;//temp is removed after the do-while
+		c=start[i];
+		switch(start[i]){
+			case 'b': temp="char ";					break;
+			case 'w': temp="word ";					break;
+			case 'd': temp="int ";					break;
+			case 'q': temp="long long ";			break;
+			case 'B': temp="unsigned char ";		break;
+			case 'W': temp="unsigned word ";		break;
+			case 'D': temp="unsigned int ";			break;
+			case 'Q': temp="unsigned long long ";	break;
+			case 'p': pointers++,i++;				continue;//goto do
+			default: break;
+		}
+	i++;
 	//parse_flags|=prs_was_op;
 	pushToOutput(temp,strlen(temp));
+	
+	//keep going while there is no endcap
+	}while (	c!='b'	&&	c!='B'	&&
+				c!='w'	&&	c!='W'	&&
+				c!='d'	&&	c!='D'	&&
+				c!='q'	&&	c!='Q');
+
+	//add pointers to 
+	U1 *temp="*";
+	for(U1 j=0;j<pointers;j++)
+		pushToOutput(temp,1);
 	return i;//out;
 }}}
 
@@ -196,8 +218,7 @@ static inline int addArgs(char * start){{{
 	int i=0;
 
 	//start the argument list with the needful
-	{char *temp="(";
-		pushToOutput(temp,1);}
+	{char *temp="(";pushToOutput(temp,1);}
 
 	//for doing comma based type repitition for multiple
 	//variable identifiers as well as error checking.
@@ -210,9 +231,14 @@ static inline int addArgs(char * start){{{
 
 	//do argument parsing
 	while (start[i]!=']'){
+
 		//clear whitespace
 		if (isWhitespace(start+i))
 				i+=toSymbol(start+i);
+
+		//if just finished with an ID 
+		if (argstate&argstate_done_ID){
+			char *temp=",";pushToOutput(temp,1);}
 
 		//check for varlists
 		if (start[i]==','){{{
@@ -247,6 +273,7 @@ static inline int addArgs(char * start){{{
 
 		//check for new type
 		if(start[i]=='#'){{{
+				
 			i++;
 			lastArgTypeLoc=start+i;
 			i+=addType(lastArgTypeLoc);
