@@ -15,6 +15,7 @@
 #include <string.h>
 #include <strings.h>
 #include <string.h>
+#include "keywords.h"
 //}}}
 
 //custom type names {{{
@@ -79,7 +80,7 @@ static char * wanted_code=	"int main(int var,int val){return 0;}";
 //Main data in buffer
 //TODO: When the transpiler moves to files, make this start
 //as null.
-static char * qc_code=		"{#dmain[#dvar,val] 0 ret}";
+static char * qc_code=		"{#dmain[#dvar,val]ret 0}";
 int qc_size;
 
 //For adding previous IDs to tracking arrays.
@@ -234,8 +235,6 @@ static inline int addArgs(char * start){{{
 				parse_flags|=prs_fail,
 				error_flags|=err_no_type_for_varlist;
 				return i;}
-
-			//add comma to C output
 			
 			//add The last type to the output
 			addType(lastArgTypeLoc);
@@ -310,26 +309,30 @@ start:
 				i+=toSymbol(temp),parse_flags|=prs_ws_sep_sym;
 		}
 
+		//check for special characters
 		temp=&qc_code[i];
 		switch(*temp){ 
 			case '#':
 						i+=addType(temp+1);
 						parse_flags|=prs_new_id;
-						break; 
+						continue;
 			case '{': 
 						scope++,
 				 		parse_flags|=prs_new_scope;
-						break;
+						continue;
 			case '}':
 						scope--;char *brkt="}";
 						pushToOutput(brkt,1);
-						break;
+						continue;
 			case '[':
 						i+=addArgs(temp+1);
 						parse_flags|=prs_was_arg;
-						break;
+						continue;
+			default:	
+						
 		}
 	}
-	printf ("Wanted:\t%s\nResult:\t%s\n",wanted_code,result_code);
+	printf ("From:   %s\nWanted: %s\nResult: %s\n",
+			qc_code,wanted_code,result_code);
 	return 0;
 }
