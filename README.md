@@ -94,7 +94,8 @@ C:	int i;
 	other:
 	v	:	void
 	pointer infixes:
-	pb	:	
+	pb	:	pointer to byte
+	ppb	:	pointer to pointer to byte
 
 	Vector data types are explained later.
 
@@ -342,7 +343,7 @@ Comments:
 		comment block	*;
 Functions:
 	Declaration:
-	{#dtestfunction[#darg1 arg2](ret(+arg1 arg2))}
+	{#dtestfunction[#darg1 arg2](ret(+ arg1 arg2))}
 	Which would transpile to:
 	int testfunction(int arg1,int arg2){return arg1+arg2};
 
@@ -352,9 +353,17 @@ Functions:
 	unlike in lisps. If you use them, you are telling the compiler you are
 	defining something of some sort. this can be implicit, such as in: 
 
-	(for {#di 0} i<100 i++ (testfunction 1 2))
-	for(int i=0;i<100;i++){testfunction()
-	The #di does not have to be in 
+	for 0#di i<100 i++ testfunction 1 2
+	for(int i=0;i<100;i++)testfunction(1,2);
+
+	Because expressions are optional within the list, you can have this
+	interesting and quite fast way to call a function. If you have a variadic
+	function, use the parentheses like so:
+
+	for 0#di i<100 i++ (testfunction 1 2)
+	for(int i=0;i<100;i++)testfunction(1,2);
+
+	This tells the transpiler that the function is calling 
 
 Integration:
 	
@@ -370,8 +379,8 @@ Integration:
 	suppliment the lang while I develop it. It's also the case that not
 	having that fine grained control over the mid-level programming media is
 	highly short-sighted due to the gimping of control the programmer might
-	very easily feel from not having the inability to emit fairly exact C
-	and fairly exact assembly, thereby.
+	very easily feel from not having the ability to emit fairly exact C and
+	fairly exact assembly, thereby.
 
 	Because this is mostly a preprocessor not a true compiler, I don't need
 	to worry so much about the verbosely emitted C being technically
