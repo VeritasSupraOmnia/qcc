@@ -15,7 +15,6 @@
 #include <string.h>
 #include <strings.h>
 #include <string.h>
-#include "keywords.h"
 //}}}
 
 //custom type names {{{
@@ -26,6 +25,7 @@
 #define U8 unsigned long long 
 //}}}
 
+//Flags {{{
 //parsing flags {{{
 //
 //tell the parser to increase scope after the next iteration
@@ -74,14 +74,18 @@ int scope=0;
 static eflgsz error_flags=0;
 //}}}
 
+//}}}
 
 //for testing
-static char * wanted_code=	"int main(int var,int val){return 0;}";
+static char * wanted_code=	"int main(int argc,char **argv){\n\treturn 0;\n}";
+
+
+//Main Data section{{{
 
 //Main data in buffer
 //TODO: When the transpiler moves to files, make this start
 //as null.
-static char * qc_code=		"{#dmain[#dargc#ppbargv]ret 0}";
+static char * qc_code=		"{#dmain[#dargc#ppbargv]\n\t{:return 0;:}\n}";
 int qc_size;
 
 //For adding previous IDs to tracking arrays.
@@ -96,8 +100,33 @@ int *function_array_string_sizes;
 //For saving output code to.
 char * result_code;
 int result_size=	0;
+//}}}
 
-static inline int maybeId(char * start){{{
+//data structures{{{
+
+//struct enumeration{{{
+
+typedef struct func_identifier{	//{{{
+}fid;							//}}}
+
+//}}}
+
+//}}}
+
+//Low order utilities {{{
+int pushToOutput(char* symbol,int size){{{
+	//increases the size of the output allocation while
+	//copying the same amount of bytes to the allocation
+	//basically just a copy but with the expansion of the
+	//allocation.
+	
+	result_code=	realloc(result_code,result_size+size);
+	bcopy(symbol,&result_code[result_size],size);
+	result_size+=	size;
+	return 0;
+}}}
+
+static inline int maybeId(char *start){{{
 	//returns whether a current symbol might indicate an
 	//identifier
 	if(((	*start&0x5f	)<=	0x5a	&&	
@@ -114,20 +143,16 @@ static inline int isWhitespace(char *start){{{
 	return 0;
 }}}
 
-int pushToOutput(char* symbol,int size){{{
-	//increases the size of the output allocation while
-	//copying the same amount of bytes to the allocation
-	//basically just a copy but with the expansion of the
-	//allocation.
-	
-	result_code=	realloc(result_code,result_size+size);
-	bcopy(symbol,&result_code[result_size],size);
-	result_size+=	size;
-	return 0;
+static inline int toSymbol(char *start){{{
+	//Returns byte offset to when the next symbol is,
+	//ignoring spaces, tabs and newlines and adds the
+	//whitespace to the C code.
+	int i=0;char c=start[i];
+	while (c==' '||c=='\t'||c=='\n')
+		pushToOutput(&c,1),i++,c=start[i];
+	return i;//returns the amount to increase the parser increment counter.
 }}}
 
-int pushFuncName(char* symbol,int size){{{
-}}}
 
 static inline int addType(char * start){{{
 
@@ -191,15 +216,21 @@ static inline int addId(char *start){{{
 	return i;
 }}}
 
+static inline int addJump(char *start){{{
+	//determines if the next symbol is a jump symbol,
+	//adding the translated value to the result and
+	//returning the qc_code that was jumped over.
 
-static inline int toSymbol(char *start){{{
-	//Returns byte offset to when the next symbol is,
-	//ignoring spaces, tabs and newlines.
-	int i=0;char c=start[i];
-	while (c==' '||c=='\t'||c=='\n')
-			i++,c=start[i];
-	return i;//returns the amount to increase the parser increment counter.
+	//check the first character to see if any of the jump
+	//symbols are possible
+	switch (*start){
+		case 'g':
+		case 'c':
+		case 'b':
+		case 'r':
+	}
 }}}
+
 
 int printSyntaxErrorLocation(char *start,int local_loc){{{
 	//TODO: make this print the area around the current
@@ -306,11 +337,43 @@ static inline int addArgs(char * start){{{
 	#undef argstate_done_ID
 }}}
 
-int main(){
+//}}}
+
+//High order utilities {{{
+
+static inline int addPassthrough(char *start){{{
+	//tells the transpiler to pass this string directly to
+	//the C output until it reaches the character pair :}.
+	//This function is invoked when the pair {: is parsed,
+	//so the whole of the passthrough is enclosed with:
+	//  qc code  {: passthrough C code :} qc code
+	//
+	//Obviously the brackets and colon do not show up in the
+	//resulting code
+
+	int i=0;
+	while (	//keep iterating while not at the end
+			!(start[i]==':' && start[i+1]=='}')){
+		i++;
+	}
+
+	//push unadulterated code direcly
+	pushToOutput(start,i);
+
+	//skip the passthrough escape sequence
+	i+=2;
+	return i;
+}}}
+
+int pushFuncName(char* symbol,int size){{{
+
+}}}
+//}}}
+
+int main(){{{
 	result_code=malloc(1);char * symbol=malloc(1);
 	for (int i=0;i<strlen(qc_code);i++){
 start:
-		int size=0;	
 
 		//If there's a new arglist and a new scope, that
 		//means that this curly bracket is needed in the C
@@ -329,7 +392,11 @@ start:
 		if (parse_flags & prs_new_id && maybeId(temp)){
 			//If a previous declaration says to expect a new
 			//identifier in the qc source
-			i+=addId(temp);
+			int size=addId(temp);
+			i+=size;
+
+			
+
 			parse_flags|=prs_was_id;
 			parse_flags^=prs_new_id;
 			if (isWhitespace(temp))
@@ -343,9 +410,13 @@ start:
 						i+=addType(temp+1);
 						parse_flags|=prs_new_id;
 						continue;
-			case '{': 
-						scope++,
+			case '{': 	
+						if(*(temp+1)==':'){
+							i+=addPassthrough(temp+2)+1;
+							continue;
+						}
 				 		parse_flags|=prs_new_scope;
+						scope++;
 						continue;
 			case '}':
 						scope--;char *brkt="}";
@@ -359,7 +430,7 @@ start:
 						
 		}
 	}
-	printf ("From:   %s\nWanted: %s\nResult: %s\n",
+	printf ("From:\n%s\n\nWanted:\n%s\n\nResult:\n%s\n",
 			qc_code,wanted_code,result_code);
 	return 0;
-}
+}}}
