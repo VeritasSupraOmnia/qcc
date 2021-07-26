@@ -98,25 +98,17 @@ static eflgsz error_flags=0;
 
 //}}}
 
-//for testing
-static char * wanted_code=	"int main(int argc,char **argv){\n"
-							"\t//this is a line comment\n"
-							"\t/*this is a block comment that\n"
-							"\tkeeps going after new lines*/\n"
-							"\treturn 0;\n}";
-
-
 //Main Data section{{{
 
 //Main data in buffer
 //TODO: When the transpiler moves to files, make this start
 //as null.
-static char * qc_code=		"{#dmain[#dargc#ppbargv]\n"
+static char * qc_code;/*=		"{#dmain[#dargc#ppbargv]\n"
 							"\t;this is a line comment\n"
 							"\t{:return 0;:}\n"
 							"\t;*this is a block comment that\n"
 							"\tkeeps going after new lines*;\n"
-							"}";
+							"}";*/
 int qc_size=0;
 
 //pointers copied directly from argv
@@ -255,11 +247,19 @@ static inline int addType(char * start){{{
 	//parse_flags|=prs_was_op;
 	pushToOutput(temp,strlen(temp));
 	
-	//keep going while there is no endcap
-	}while (	c!='b'	&&	c!='B'	&&
+	//keep going while there is no endcap and these are valid
+	}while (	
+				//while no type is defined
+			(	c!='b'	&&	c!='B'	&&
 				c!='w'	&&	c!='W'	&&
 				c!='d'	&&	c!='D'	&&
-				c!='q'	&&	c!='Q');
+				c!='q'	&&	c!='Q'	&&
+				c!='h'	&&	c!='f'	&&
+				c!='l'	&&	c!='v')	&&
+				//and modifiers are still being defined
+				(c=='x' ||	c=='y'	||
+				 c=='z'	||	c=='p')
+			);
 
 	//add pointers to 
 	U1 *temp="*";
@@ -462,28 +462,27 @@ int pullFromFile(char *path){{{
 	qc_code=malloc(4096);
 
 	//initialize local buffer
-	U8 ti;char tca[4096];
+	int ti;char tca[4096];
 	
-	int f=open(path,O_RDONLY);
-
+	int f=open(path,O_RDWR);
 
 	do{	
 		//read input
-		ti=read(f,&tca[0],4096);
+		ti=read(f,tca,4096);
 
-		//if read failed, then...
-		if (ti=-1){
-			printf("Read ended pre-maturely from file: %s",path);
-			return 1;}
+		//if read ended
+		if (ti!=0){
+//		printf("%i\n",ti);
 
 		//increase main buff alloc and copy local to it
 		qc_code=realloc(qc_code,qc_size+ti);
-		bcopy(&tca[0],qc_code+qc_size,ti);
+		bcopy(tca,qc_code+qc_size,ti);
 
 		//realloc by adding whole 4kib pages
 		qc_size+=ti;
+		}
 
-	}while(ti!=4096);
+	}while(ti!=0);
 	close(f);
 	return 0;
 }}}
@@ -542,12 +541,17 @@ int main(int argc, char **argv){{{
 					mode_flags|=mode_defined_output;
 					output_path=argv[i+1]; i++; break;
 				default:
-					if(input_defined){
-						printf("Too many input files defined\n"); return 1;
-					}
-					else{ input_path=argv[i]; input_defined=1; break; }
-					
+					printf("Argument %i - %s not recognized. Ignoring\n",i,argv[i]);
+					break;
 
+			}
+		}else{
+			if(input_defined){
+				printf("Too many input files defined\n");
+				return 1;
+			}
+			else{
+				input_path=argv[i]; input_defined=1;
 			}
 		}
 	}
