@@ -117,7 +117,7 @@ static char * qc_code=		"{#dmain[#dargc#ppbargv]\n"
 							"\t;*this is a block comment that\n"
 							"\tkeeps going after new lines*;\n"
 							"}";
-int qc_size;
+int qc_size=0;
 
 //pointers copied directly from argv
 static char * input_path;
@@ -198,8 +198,6 @@ static inline int handleComment(char *start){{{
 	return i;
 }}}
 
-
-
 static inline int maybeId(char *start){{{
 	//returns whether a current symbol might indicate an
 	//identifier
@@ -226,7 +224,6 @@ static inline int toSymbol(char *start){{{
 		pushToOutput(&c,1),i++,c=start[i];
 	return i;//returns the amount to increase the parser increment counter.
 }}}
-
 
 static inline int addType(char * start){{{
 
@@ -304,7 +301,6 @@ static inline int addJump(char *start){{{
 		case 'r':
 	}
 }}}
-
 
 int printSyntaxErrorLocation(char *start,int local_loc){{{
 	//TODO: make this print the area around the current
@@ -449,11 +445,45 @@ int pushFuncName(char* symbol,int size){{{
 
 int dumpToFile(char* path){{{
 	//dumps the whole output to a given file
-	int f=open(path,O_CREAT,0x6666);
+	int f=open(path,O_WRONLY|O_CREAT,0x6666);
+
+	//if write failed, then...
 	if(write(f,result_code,result_size)){
 		printf("Failed to write to file: %s\n",path);
-		return 1;
-	}
+		return 1;}
+
+	close(f);
+	return 0;
+}}}
+
+int pullFromFile(char *path){{{
+
+	//initialize main buffer
+	qc_code=malloc(4096);
+
+	//initialize local buffer
+	U8 ti;char tca[4096];
+	
+	int f=open(path,O_RDONLY);
+
+
+	do{	
+		//read input
+		ti=read(f,&tca[0],4096);
+
+		//if read failed, then...
+		if (ti=-1){
+			printf("Read ended pre-maturely from file: %s",path);
+			return 1;}
+
+		//increase main buff alloc and copy local to it
+		qc_code=realloc(qc_code,qc_size+ti);
+		bcopy(&tca[0],qc_code+qc_size,ti);
+
+		//realloc by adding whole 4kib pages
+		qc_size+=ti;
+
+	}while(ti!=4096);
 	close(f);
 	return 0;
 }}}
@@ -525,9 +555,14 @@ int main(int argc, char **argv){{{
 
 	//}}}
 
-	result_code=malloc(1);char * symbol=malloc(1);
+	//input file reading
+	pullFromFile(input_path);
+
+	//initialization of output storage buffer
+	result_code=malloc(1);
+
+	//main parsing loop
 	for (int i=0;i<strlen(qc_code);i++){
-start:
 
 		//If there's a new arglist and a new scope, that
 		//means that this curly bracket is needed in the C
@@ -587,7 +622,9 @@ start:
 						
 		}
 	}
-	printf ("From:\n%s\n\nWanted:\n%s\n\nResult:\n%s\n",
-			qc_code,wanted_code,result_code);
+
+	//file output
+	//TODO: put file output handling code here
+	
 	return 0;
 }}}
