@@ -26,8 +26,10 @@
 //}}}
 
 //Flags {{{
+
 //parsing flags {{{
-//
+//Flags that matter during the 
+
 //tell the parser to increase scope after the next iteration
 //because a new curly bracket is needed
 #define prs_new_scope		0x01
@@ -64,6 +66,21 @@ static pflgsz parse_next_flags=0;
 	//for a sort of rolling source state control.
 
 int scope=0;
+//}}}
+
+//mode flags{{{
+//Flags determining runtime mode which might be parsed from
+//the arguments or mode altering symbols within the text.
+#define mflgsz U1
+static mflgsz mode_flags=0;
+
+//For telling the compiler to trim these things during
+//qc parsingg so that they don't need to be compiled again.
+//This is important what with C compilers so often being
+//malignant piles of shit when it comes to compile speed.
+#define mode_trim_comments			0x1
+#define mode_trim_whitespace		0x2
+
 //}}}
 
 //error flags{{{
@@ -114,7 +131,7 @@ typedef struct func_identifier{	//{{{
 //}}}
 
 //Low order utilities {{{
-int pushToOutput(char* symbol,int size){{{
+static inline int pushToOutput(char* symbol,int size){{{
 	//increases the size of the output allocation while
 	//copying the same amount of bytes to the allocation
 	//basically just a copy but with the expansion of the
@@ -125,6 +142,7 @@ int pushToOutput(char* symbol,int size){{{
 	result_size+=	size;
 	return 0;
 }}}
+
 
 static inline int maybeId(char *start){{{
 	//returns whether a current symbol might indicate an
@@ -370,7 +388,36 @@ int pushFuncName(char* symbol,int size){{{
 }}}
 //}}}
 
+//Misc utilities{{{
+
+int dumpToFile(char* path){{{
+	//dumps the whole output to a given file
+	int f=open(path,O_CREAT,0x6666);
+	if(write(f,result_code,result_size)){
+		printf("Failed to write to file: %s\n",path);
+		return 1;
+	}
+	close(f);
+	return 0;
+}}}
+
+int printUsage(){{{
+	static char * usage=
+		"qcc qcc_file.qc [-nc] [-nw] [-p] [-o output.c] [-c [gcc,tcc,etc]] [-h]\n"
+		"\t-nc\t:\tNo comments output to C.\n"
+		"\t-nw\t:\tNo whitespace output to C.\n"
+		"\t-p\t:\tPrint C code to standard out.\n"
+		"\t-o\t:\tOutputs the end file to the given path.\n"
+		"\t-c\t:\tUNIMPLIMENTED | automatically compiles the resulting\n"
+		"\t\t\tC code with an optionally specified compiler.\n"
+		"\t-h\t:\tPrint this message\n";
+	write(1,usage,strlen(usage));
+}}}
+
+//}}}
+
 int main(){{{
+	printUsage();
 	result_code=malloc(1);char * symbol=malloc(1);
 	for (int i=0;i<strlen(qc_code);i++){
 start:
@@ -426,6 +473,7 @@ start:
 						i+=addArgs(temp+1);
 						parse_flags|=prs_was_arg;
 						continue;
+			case ';':	//line comment
 			default:	
 						
 		}
