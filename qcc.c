@@ -80,6 +80,11 @@ static mflgsz mode_flags=0;
 //malignant piles of shit when it comes to compile speed.
 #define mode_trim_comments			0x1
 #define mode_trim_whitespace		0x2
+//prints code to standard out
+#define mode_print_code				0x4
+//compiles to 
+#define mode_do_compile				0x4
+#define mode_defined_output			0x8
 
 //}}}
 
@@ -104,6 +109,11 @@ static char * wanted_code=	"int main(int argc,char **argv){\n\treturn 0;\n}";
 //as null.
 static char * qc_code=		"{#dmain[#dargc#ppbargv]\n\t{:return 0;:}\n}";
 int qc_size;
+
+//pointers copied directly from argv
+static char * input_path;
+static char * output_path;
+static char * defined_cc;	//defined c compiler for automatic compilation
 
 //For adding previous IDs to tracking arrays.
 char * plastId;
@@ -386,6 +396,7 @@ static inline int addPassthrough(char *start){{{
 int pushFuncName(char* symbol,int size){{{
 
 }}}
+
 //}}}
 
 //Misc utilities{{{
@@ -416,8 +427,58 @@ int printUsage(){{{
 
 //}}}
 
-int main(){{{
-	printUsage();
+int main(int argc, char **argv){{{
+
+	//command line args parsing {{{
+	
+	if (argc<2){printUsage();return 1;}
+
+	{char input_defined=0;
+	for (int i=1;i<argc;i++){
+		if (argv[i][0]=='-'){
+			switch (argv[i][1]){
+
+				case 'n':
+					if (argv[i][2]=='c') mode_flags|=mode_trim_comments;
+					else if (argv[i][2]=='w') mode_flags|=mode_trim_whitespace;
+					break;
+
+				case 'p':
+					if (mode_flags&mode_do_compile){
+						printf("Incompatible flags \"-p\" and \"-c\"\n");
+						return 1;}
+					if (mode_flags&mode_defined_output){
+						printf("Incompatible flags \"-p\" and \"-o\"\n");
+						return 1;}
+					mode_flags|=mode_print_code;break;
+
+				case 'c':
+					if (mode_flags&mode_print_code){
+						printf("Incompatible flags \"-c\" and \"-p\"\n");
+						return 1;}
+					if (argv[i][2]=='c'){ defined_cc=argv[i+1];i++; }
+					mode_flags|=mode_do_compile;break;
+
+				case 'o':
+					if (mode_flags&mode_print_code){
+						printf("Incompatible flags \"-o\" and \"-p\"\n");
+						return 1;}
+					mode_flags|=mode_defined_output;
+					output_path=argv[i+1]; i++; break;
+				default:
+					if(input_defined){
+						printf("Too many input files defined\n"); return 1;
+					}
+					else{ input_path=argv[i]; input_defined=1; break; }
+					
+
+			}
+		}
+	}
+	}
+
+	//}}}
+
 	result_code=malloc(1);char * symbol=malloc(1);
 	for (int i=0;i<strlen(qc_code);i++){
 start:
