@@ -99,7 +99,11 @@ static eflgsz error_flags=0;
 //}}}
 
 //for testing
-static char * wanted_code=	"int main(int argc,char **argv){\n\treturn 0;\n}";
+static char * wanted_code=	"int main(int argc,char **argv){\n"
+							"\t//this is a line comment\n"
+							"\t/*this is a block comment that\n"
+							"\tkeeps going after new lines*/\n"
+							"\treturn 0;\n}";
 
 
 //Main Data section{{{
@@ -107,7 +111,12 @@ static char * wanted_code=	"int main(int argc,char **argv){\n\treturn 0;\n}";
 //Main data in buffer
 //TODO: When the transpiler moves to files, make this start
 //as null.
-static char * qc_code=		"{#dmain[#dargc#ppbargv]\n\t{:return 0;:}\n}";
+static char * qc_code=		"{#dmain[#dargc#ppbargv]\n"
+							"\t;this is a line comment\n"
+							"\t{:return 0;:}\n"
+							"\t;*this is a block comment that\n"
+							"\tkeeps going after new lines*;\n"
+							"}";
 int qc_size;
 
 //pointers copied directly from argv
@@ -129,6 +138,18 @@ char * result_code;
 int result_size=	0;
 //}}}
 
+static inline int pushToOutput(char* symbol,int size){{{
+	//increases the size of the output allocation while
+	//copying the same amount of bytes to the allocation
+	//basically just a copy but with the expansion of the
+	//allocation.
+	
+	result_code=	realloc(result_code,result_size+size);
+	bcopy(symbol,&result_code[result_size],size);
+	result_size+=	size;
+	return 0;
+}}}
+
 //data structures{{{
 
 //struct enumeration{{{
@@ -141,17 +162,42 @@ typedef struct func_identifier{	//{{{
 //}}}
 
 //Low order utilities {{{
-static inline int pushToOutput(char* symbol,int size){{{
-	//increases the size of the output allocation while
-	//copying the same amount of bytes to the allocation
-	//basically just a copy but with the expansion of the
-	//allocation.
-	
-	result_code=	realloc(result_code,result_size+size);
-	bcopy(symbol,&result_code[result_size],size);
-	result_size+=	size;
-	return 0;
+
+static inline int handleComment(char *start){{{
+	int i=0;
+	if (start[0]=='*'){//if block comment
+		
+		start=start+1;
+
+		//find the size of the comment
+		while(start[i]!='*' && start[i+1]!=';') i++;
+
+		//push to C  replacing qcc comments with C comments
+		if (mode_flags&mode_trim_comments==0){
+			{char *temp="/*";pushToOutput(temp,2);}
+			pushToOutput(start,i);
+			{char *temp="*/";pushToOutput(temp,2);}
+		}
+		
+		//
+		i+=4;
+
+	}else{//else if line comment
+
+		//find the size of the comment
+		while(start[i]!='\n') i++;
+
+		//push to C, translating all the while
+		if (mode_flags&mode_trim_comments==0){
+			{char *temp="//";pushToOutput(temp,2);}
+			pushToOutput(start,i);
+		}
+		i+=2;
+	}
+
+	return i;
 }}}
+
 
 
 static inline int maybeId(char *start){{{
@@ -534,7 +580,9 @@ start:
 						i+=addArgs(temp+1);
 						parse_flags|=prs_was_arg;
 						continue;
-			case ';':	//line comment
+			case ';':	
+						i+=handleComment(temp+1);
+						continue;
 			default:	
 						
 		}
