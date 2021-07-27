@@ -189,19 +189,24 @@ int pushFuncName(char* symbol,int size){{{
 static inline int handleComment(char *start){{{
 	int i=0;
 	if (start[i+1]=='*'){//if block comment
+
+		//move past comment start
 		i+=2;
 
-		//find the size of the comment
+		//find the size of the rest of the comment
 		while(start[i]!='*' && start[i+1]!=';') i++;
 
-		//push to C  replacing qcc comments with C comments
+		//if the mode tells you to push comments
 		if ((mode_flags&mode_trim_comments)==0){
+			//C block comment start
 			{char *temp="/*";pushToOutput(temp,2);}
+			//comment text (-2 for actual size)
 			pushToOutput(start+2,i-2);
+			//C block comment end
 			{char *temp="*/";pushToOutput(temp,2);}
 		}
 		
-		//
+		//move past the last ';'
 		i+=1;
 
 	}
