@@ -114,8 +114,10 @@ static mflgsz mode_flags=0;
 //}}}
 
 //error flags{{{
-#define err_no_type_for_varlist 0x01
-#define err_type_does_not_exist 0x01
+#define err_no_type_for_varlist		0x01
+#define err_type_does_not_exist		0x02
+#define err_string_has_no_end		0x04
+#define err_char_const_has_no_end	0x04
 
 #define eflgsz U2
 static eflgsz error_flags=0;
@@ -205,7 +207,6 @@ static inline int addPassthrough(char *start){{{
 	return i;
 }}}
 
-
 static inline int handleComment(char *start){{{
 	int i=0;
 	if (start[i+1]=='*'){//if block comment
@@ -248,10 +249,10 @@ static inline int handleComment(char *start){{{
 static inline int maybeId(char *start){{{
 	//returns whether a current symbol might indicate an
 	//identifier
-	if(((	*start&0x5f	)<=	0x5a	&&	
-	   (	*start&0x5f	)>	0x40) 	||
-	   ((	*start&0x7f	)<=	0x7a	&&	
-	   (	*start&0x7f	)>	0x60))	return 1;
+	if(((	*start	)<=	0x5a	&&	
+	   (	*start	)>	0x40) 	||
+	   ((	*start	)<=	0x7a	&&	
+	   (	*start	)>	0x60))	return 1;
 	return 0;
 }}}
 
@@ -262,14 +263,110 @@ static inline int isWhitespace(char *start){{{
 	return 0;
 }}}
 
+static inline int sizeOfAlphaNum(char *start){{{
+	//finds size of alphanumeric symbol
+	int i=0;char c=start[i];
+
+	//while 0-9, a-z or A-Z, then increment
+	while(	(	c	<=	0x5a	&&	c	>	0x40 )	||
+			(	c	<=	0x7a	&&	c	>	0x60 )	||
+			(	c	<=	0x39	&&	c	>=	0x30 )	)
+			i++, c=start[i];	
+			
+	return i;
+}}}
+
 static inline int toSymbol(char *start){{{
 	//Returns byte offset to when the next symbol is,
 	//ignoring spaces, tabs and newlines and adds the
 	//whitespace to the C code.
 	int i=0;char c=start[i];
-	while (c==' '||c=='\t'||c=='\n')
-		pushToOutput(&c,1),i++,c=start[i];
+	while (c==' '||c=='\t'||c=='\n'){
+		if((mode_flags&mode_trim_whitespace)==0)
+			pushToOutput(&c,1);
+	i++;c=start[i];}
 	return i;//returns the amount to increase the parser increment counter.
+}}}
+
+static inline int sizeOfString(char *start){{{
+	//gets size of string, including quotes and escapes \" properly as well as \\" and \\\"
+	U1 escaped=0;int i=0;
+	while (start[i]!='\"' || (start[i]=='\"' && (escaped!=0))){
+
+		if (start[i]=='\n') {error_flags|=err_string_has_no_end;return 0;}
+
+		//an escape means 1 character skipped exit checking
+		if (escaped){
+			escaped^=escaped;
+			i++;
+			//this needs to be done even during escapes
+			if (start[i]=='\n') {error_flags|=err_string_has_no_end;return 0;}
+		}
+		if (start[i]=='\\') escaped=1;
+		i++;
+
+	}
+	return i;
+}}}
+
+static inline int sizeOfCharConst(char *start){{{
+	//gets size of char const (can be 3 or 4 chars long in source)
+	if (start[1]=='\\'){
+		if (start[3]!='\''){error_flags|=err_char_const_has_no_end;return 0;}
+		return 4;
+	}else{
+		if (start[2]!='\''){error_flags|=err_char_const_has_no_end;return 0;}
+		return 3;
+	}
+}}}
+
+static inline int addConstant(char *start){{{
+	//adds a constant 
+	int i=0;int temp;
+	switch (*start){
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+		case '0':	temp=sizeOfAlphaNum(start),
+					pushToOutput(start,temp),
+					i+=temp;
+					break;
+		case '\"':	temp=sizeOfString(start),
+					pushToOutput(start,temp),
+					i+=temp;
+					break;
+		case '\'':	temp=sizeOfCharConst(start),
+					pushToOutput(start,temp),
+					i+=temp;
+					break;
+	}
+	return i;
+}}}
+
+static inline int isAddReturn(char *start){{{
+	//checks if at the start of a whitespace terminated ret statement
+	//if so, add the C return statement as well as the constant that follows
+	int i=0;
+
+	//If is qc ret statement
+	if (*start=='r' && start[1]=='e' && start[2]=='t' && isWhitespace(start+3)){
+		//push C return
+		{char *temp="return";pushToOutput(temp,6);}
+		//move past whitespace to constant
+		i+=3;i+=toSymbol(start+i);
+		
+		//TODO: add symbol checker here so that
+		i+=addConstant(start+i);
+		i--;
+		{char *temp=";";pushToOutput(temp,1);}
+	}
+	return i;
 }}}
 
 static inline int addType(char * start){{{
@@ -649,7 +746,8 @@ int main(int argc, char **argv){{{
 						i+=handleComment(temp);
 						continue;
 
-			case 'r':	//TODO: implement return keyword	- "ret" in qc
+			case 'r':	{int is=isAddReturn(temp);
+							if (is){i+=is;continue;}}
 			case 'b':	//TODO: implement break keyword		- "brk" in qc
 			case 'c':	//TODO: implement continue keyword	- "con" in qc
 			case 'j':	//TODO: implement goto keyword		- "jmp" in qc
