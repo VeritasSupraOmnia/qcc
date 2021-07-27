@@ -27,8 +27,31 @@
 
 //Flags {{{
 
+//Function flags {{{
+//for keeping the function array state (in "Main data" section)
+
+//Array for keeping track of function argument counts and flags.
+#define fflgsz U1
+fflgsz *func_flags;//same count as "function_array_size" detailed in section: Main data
+
+//for determining the amount of bits to shift the access of func_flags elements right to get the function argument count
+#define func_flags_size 2
+
+//for getting a mask of the flags alone to AND them, just in case...
+//This is probably not necessary
+#define func_flags_fmask (-1>>((sizeof(fflgsz)*8)-func_flags_size))
+//has any arguments at all
+#define fun_has_arguments	0x01
+//might have more than count arguments
+#define fun_is_variadic		0x02
+
+//to get the count, you must shift
+
+
+//}}}
+
 //parsing flags {{{
-//Flags that matter during the 
+//for keeping the runtime state of the parser
 
 //tell the parser to increase scope after the next iteration
 //because a new curly bracket is needed
@@ -122,9 +145,9 @@ static char * defined_cc;	//defined c compiler for automatic compilation
 char * plastId;
 int slastId;
 
-//For keeping track of function name strings.
+//Arrays for keeping track of function name strings.
 char ** function_array;
-int function_array_size;
+int function_array_size;//main array size
 int *function_array_string_sizes;
 
 //For saving output code to.
@@ -182,9 +205,6 @@ static inline int addPassthrough(char *start){{{
 	return i;
 }}}
 
-int pushFuncName(char* symbol,int size){{{
-
-}}}
 
 static inline int handleComment(char *start){{{
 	int i=0;
@@ -335,6 +355,10 @@ static inline int addJump(char *start){{{
 		case 'b':
 		case 'r':
 	}
+}}}
+
+int addFuncName(char* symbol,int size){{{
+	
 }}}
 
 int printSyntaxErrorLocation(char *start,int local_loc){{{
@@ -625,6 +649,12 @@ int main(int argc, char **argv){{{
 						i+=handleComment(temp);
 						continue;
 
+			case 'r':	//TODO: implement return keyword	- "ret" in qc
+			case 'b':	//TODO: implement break keyword		- "brk" in qc
+			case 'c':	//TODO: implement continue keyword	- "con" in qc
+			case 'j':	//TODO: implement goto keyword		- "jmp" in qc
+						//IDEA: Make jne, je, jlz, jg, etc to allow for easy if statements.
+
 			default:	
 						
 		}
@@ -647,6 +677,7 @@ int main(int argc, char **argv){{{
 		case 0x10:	//compile to default file path
 
 		case 0x0:	//write to default file path
+			
 
 	}//}}}
 	
