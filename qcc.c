@@ -444,12 +444,10 @@ static inline int addArgs(char * start){{{
 
 int dumpToFile(){{{
 	//dumps the whole output to a given file
-	int f=open(output_path,O_WRONLY|O_CREAT,0x7777);
+	int f=open(output_path,O_WRONLY|O_CREAT,0777);
 
 	//if write failed, then...
-	if(write(f,result_code,result_size)){
-		printf("Failed to write to file: %s\n",output_path);
-		return 1;}
+	write(f,result_code,result_size);
 
 	close(f);
 	return 0;
@@ -571,7 +569,7 @@ int main(int argc, char **argv){{{
 		//means that this curly bracket is needed in the C
 		//output.
 		if(parse_flags&prs_was_arg&&parse_flags&prs_new_scope){
-			char *c="{";pushToOutput(c,1);i++;parse_flags^=prs_was_arg;}
+			char *c="{";pushToOutput(c,1),parse_flags^=prs_was_arg;}
 
 		//For receiving symbol data for this iteration to
 		//add to the result_code string.
@@ -586,8 +584,6 @@ int main(int argc, char **argv){{{
 			//identifier in the qc source
 			int size=addId(temp);
 			i+=size;
-
-			
 
 			parse_flags|=prs_was_id;
 			parse_flags^=prs_new_id;
@@ -605,22 +601,26 @@ int main(int argc, char **argv){{{
 			case '{': 	
 						if(*(temp+1)==':'){
 							i+=addPassthrough(temp+2)+1;
-							continue;
-						}
+							continue;}
+						
 				 		parse_flags|=prs_new_scope;
 						scope++;
 						continue;
+
 			case '}':
 						scope--;char *brkt="}";
 						pushToOutput(brkt,1);
 						continue;
+
 			case '[':
 						i+=addArgs(temp+1);
 						parse_flags|=prs_was_arg;
 						continue;
+
 			case ';':	
 						i+=handleComment(temp+1);
 						continue;
+
 			default:	
 						
 		}
