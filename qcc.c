@@ -69,6 +69,7 @@ int scope=0;
 //}}}
 
 //mode flags{{{
+
 //Flags determining runtime mode which might be parsed from
 //the arguments or mode altering symbols within the text.
 #define mflgsz U1
@@ -82,9 +83,10 @@ static mflgsz mode_flags=0;
 #define mode_trim_whitespace		0x2
 //prints code to standard out
 #define mode_print_code				0x4
-//compiles to 
-#define mode_do_compile				0x4
+//non-default file output flag
 #define mode_defined_output			0x8
+//compiles to 
+#define mode_do_compile				0x10
 
 //}}}
 
@@ -130,6 +132,20 @@ char * result_code;
 int result_size=	0;
 //}}}
 
+//data structures{{{
+
+//struct enumeration{{{
+
+typedef struct func_identifier{	//{{{
+
+}fid;							//}}}
+
+//}}}
+
+//}}}
+
+//Primary utilities{{{
+
 static inline int pushToOutput(char* symbol,int size){{{
 	//increases the size of the output allocation while
 	//copying the same amount of bytes to the allocation
@@ -142,18 +158,33 @@ static inline int pushToOutput(char* symbol,int size){{{
 	return 0;
 }}}
 
-//data structures{{{
+static inline int addPassthrough(char *start){{{
+	//tells the transpiler to pass this string directly to
+	//the C output until it reaches the character pair :}.
+	//This function is invoked when the pair {: is parsed,
+	//so the whole of the passthrough is enclosed with:
+	//  qc code  {: passthrough C code :} qc code
+	//
+	//Obviously the brackets and colon do not show up in the
+	//resulting code
 
-//struct enumeration{{{
+	int i=0;
+	while (	//keep iterating while not at the end
+			!(start[i]==':' && start[i+1]=='}')){
+		i++;
+	}
 
-typedef struct func_identifier{	//{{{
-}fid;							//}}}
+	//push unadulterated code direcly
+	pushToOutput(start,i);
 
-//}}}
+	//skip the passthrough escape sequence
+	i+=2;
+	return i;
+}}}
 
-//}}}
+int pushFuncName(char* symbol,int size){{{
 
-//Low order utilities {{{
+}}}
 
 static inline int handleComment(char *start){{{
 	int i=0;
@@ -409,47 +440,15 @@ static inline int addArgs(char * start){{{
 
 //}}}
 
-//High order utilities {{{
-
-static inline int addPassthrough(char *start){{{
-	//tells the transpiler to pass this string directly to
-	//the C output until it reaches the character pair :}.
-	//This function is invoked when the pair {: is parsed,
-	//so the whole of the passthrough is enclosed with:
-	//  qc code  {: passthrough C code :} qc code
-	//
-	//Obviously the brackets and colon do not show up in the
-	//resulting code
-
-	int i=0;
-	while (	//keep iterating while not at the end
-			!(start[i]==':' && start[i+1]=='}')){
-		i++;
-	}
-
-	//push unadulterated code direcly
-	pushToOutput(start,i);
-
-	//skip the passthrough escape sequence
-	i+=2;
-	return i;
-}}}
-
-int pushFuncName(char* symbol,int size){{{
-
-}}}
-
-//}}}
-
 //Misc utilities{{{
 
-int dumpToFile(char* path){{{
+int dumpToFile(){{{
 	//dumps the whole output to a given file
-	int f=open(path,O_WRONLY|O_CREAT,0x6666);
+	int f=open(output_path,O_WRONLY|O_CREAT,0x7777);
 
 	//if write failed, then...
 	if(write(f,result_code,result_size)){
-		printf("Failed to write to file: %s\n",path);
+		printf("Failed to write to file: %s\n",output_path);
 		return 1;}
 
 	close(f);
@@ -565,7 +564,7 @@ int main(int argc, char **argv){{{
 	//initialization of output storage buffer
 	result_code=malloc(1);
 
-	//main parsing loop
+	//main parsing loop{{{
 	for (int i=0;i<strlen(qc_code);i++){
 
 		//If there's a new arglist and a new scope, that
@@ -625,10 +624,27 @@ int main(int argc, char **argv){{{
 			default:	
 						
 		}
-	}
+	}//}}}
 
-	//file output
-	//TODO: put file output handling code here
+	//output{{{
+	
+	//gets mode_flags without the trimming modes
+	switch (mode_flags&0x1c){
+		case 0x4:	//only print
+			printf(result_code);
+			break;
+
+		case 0x8:	//write transpile to file given
+			dumpToFile();
+			break;
+
+		case 0x18:	//compile to given output file
+
+		case 0x10:	//compile to default file path
+
+		case 0x0:	//write to default file path
+
+	}//}}}
 	
 	return 0;
 }}}
