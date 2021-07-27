@@ -188,34 +188,33 @@ int pushFuncName(char* symbol,int size){{{
 
 static inline int handleComment(char *start){{{
 	int i=0;
-	if (start[0]=='*'){//if block comment
-		
-		start=start+1;
+	if (start[i+1]=='*'){//if block comment
+		i+=2;
 
 		//find the size of the comment
 		while(start[i]!='*' && start[i+1]!=';') i++;
 
 		//push to C  replacing qcc comments with C comments
-		if (mode_flags&mode_trim_comments==0){
+		if ((mode_flags&mode_trim_comments)==0){
 			{char *temp="/*";pushToOutput(temp,2);}
-			pushToOutput(start,i);
+			pushToOutput(start+2,i-2);
 			{char *temp="*/";pushToOutput(temp,2);}
 		}
 		
 		//
-		i+=4;
+		i+=1;
 
-	}else{//else if line comment
-
+	}
+	else{//else if line comment
+		
 		//find the size of the comment
-		while(start[i]!='\n') i++;
+		while(start[i]!='\n') i++; 
 
 		//push to C, translating all the while
-		if (mode_flags&mode_trim_comments==0){
+		if ((mode_flags&mode_trim_comments)==0){
 			{char *temp="//";pushToOutput(temp,2);}
-			pushToOutput(start,i);
+			pushToOutput(start+1,i);
 		}
-		i+=2;
 	}
 
 	return i;
@@ -618,7 +617,7 @@ int main(int argc, char **argv){{{
 						continue;
 
 			case ';':	
-						i+=handleComment(temp+1);
+						i+=handleComment(temp);
 						continue;
 
 			default:	
