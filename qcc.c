@@ -262,6 +262,8 @@ static inline int sizeOfCharConst(char *start){{{
 	}
 }}}
 
+//Symbol addition{{{
+
 static inline int addPassthrough(char *start){{{
 	//tells the transpiler to pass this string directly to
 	//the C output until it reaches the character pair :}.
@@ -283,45 +285,6 @@ static inline int addPassthrough(char *start){{{
 
 	//skip the passthrough escape sequence
 	i+=2;
-	return i;
-}}}
-
-static inline int handleComment(char *start){{{
-	int i=0;
-	if (start[i+1]=='*'){//if block comment
-
-		//move past comment start
-		i+=2;
-
-		//find the size of the rest of the comment
-		while(start[i]!='*' && start[i+1]!=';') i++;
-
-		//if the mode tells you to push comments
-		if ((mode_flags&mode_trim_comments)==0){
-			//C block comment start
-			{char *temp="/*";pushToOutput(temp,2);}
-			//comment text (-2 for actual size)
-			pushToOutput(start+2,i-2);
-			//C block comment end
-			{char *temp="*/";pushToOutput(temp,2);}
-		}
-		
-		//move past the last ';'
-		i+=1;
-
-	}
-	else{//else if line comment
-		
-		//find the size of the comment
-		while(start[i]!='\n') i++; 
-
-		//push to C, translating all the while
-		if ((mode_flags&mode_trim_comments)==0){
-			{char *temp="//";pushToOutput(temp,2);}
-			pushToOutput(start+1,i);
-		}
-	}
-
 	return i;
 }}}
 
@@ -493,6 +456,45 @@ int addFuncName(char* symbol,int size){{{
 	
 }}}
 
+static inline int handleComment(char *start){{{
+	int i=0;
+	if (start[i+1]=='*'){//if block comment
+
+		//move past comment start
+		i+=2;
+
+		//find the size of the rest of the comment
+		while(start[i]!='*' && start[i+1]!=';') i++;
+
+		//if the mode tells you to push comments
+		if ((mode_flags&mode_trim_comments)==0){
+			//C block comment start
+			{char *temp="/*";pushToOutput(temp,2);}
+			//comment text (-2 for actual size)
+			pushToOutput(start+2,i-2);
+			//C block comment end
+			{char *temp="*/";pushToOutput(temp,2);}
+		}
+		
+		//move past the last ';'
+		i+=1;
+
+	}
+	else{//else if line comment
+		
+		//find the size of the comment
+		while(start[i]!='\n') i++; 
+
+		//push to C, translating all the while
+		if ((mode_flags&mode_trim_comments)==0){
+			{char *temp="//";pushToOutput(temp,2);}
+			pushToOutput(start+1,i);
+		}
+	}
+
+	return i;
+}}}
+
 int printSyntaxErrorLocation(char *start,int local_loc){{{
 	//TODO: make this print the area around the current
 	//location, if there is room, so that people can
@@ -597,6 +599,8 @@ static inline int addArgs(char * start){{{
 	#undef argstate_inlist
 	#undef argstate_done_ID
 }}}
+
+//}}}
 
 //}}}
 
