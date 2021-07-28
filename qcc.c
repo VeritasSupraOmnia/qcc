@@ -27,23 +27,26 @@
 
 //Flags {{{
 
-//Function flags {{{
-//for keeping the function array state (in "Main data" section)
+//Symbol flags {{{
+//for keeping the symbol array state (in "Main data" section)
 
-//Array for keeping track of function argument counts and flags.
-#define fflgsz U1
-fflgsz *func_flags;//same count as "function_array_size" detailed in section: Main data
+//Array for keeping track of symbol argument counts and flags.
+#define sflgsz U1
+sflgsz *symb_flags;//same count as "symbol" detailed in section: Main data
 
-//for determining the amount of bits to shift the access of func_flags elements right to get the function argument count
-#define func_flags_size 2
+//for determining the amount of bits to shift the access of symbol elements right to get the symbol argument count
+#define symb_flags_size 3
 
 //for getting a mask of the flags alone to AND them, just in case...
 //This is probably not necessary
-#define func_flags_fmask (-1>>((sizeof(fflgsz)*8)-func_flags_size))
+#define symb_flags_fmask (-1>>((sizeof(sflgsz)*8)-symb_flags_size))
+
+//whether symbol is a function or, if zero, a variable ID of some kind
+#define symb_is_func		0x01
 //has any arguments at all
-#define fun_has_arguments	0x01
+#define symb_has_arguments		0x02
 //might have more than count arguments
-#define fun_is_variadic		0x02
+#define symb_func_is_variadic		0x04
 
 //to get the count, you must shift
 
@@ -147,10 +150,10 @@ static char * defined_cc;	//defined c compiler for automatic compilation
 char * plastId;
 int slastId;
 
-//Arrays for keeping track of function name strings.
-char ** function_array;
-int function_array_size;//main array size
-int *function_array_string_sizes;
+//Arrays for keeping track of symbols and their use
+char ** symbol_array;
+int symbol_array_size;//main array size
+int *symbol_array_string_sizes;
 
 //For saving output code to.
 char * result_code;
@@ -321,52 +324,84 @@ static inline int sizeOfCharConst(char *start){{{
 }}}
 
 static inline int addConstant(char *start){{{
-	//adds a constant 
-	int i=0;int temp;
+	//adds a constant to the output C code
+	int i=0,temp;
 	switch (*start){
-		case '1':
-		case '2':
-		case '3':
-		case '4':
-		case '5':
-		case '6':
-		case '7':
-		case '8':
-		case '9':
-		case '0':	temp=sizeOfAlphaNum(start),
-					pushToOutput(start,temp),
-					i+=temp;
-					break;
-		case '\"':	temp=sizeOfString(start),
-					pushToOutput(start,temp),
-					i+=temp;
-					break;
-		case '\'':	temp=sizeOfCharConst(start),
-					pushToOutput(start,temp),
-					i+=temp;
-					break;
+		
+		//cases '0' to '9'
+		case '0': case '1': case '2': case '3': case '4':
+		case '5': case '6': case '7': case '8': case '9':
+			//all numeric constants start with a digit even if they contain a letter
+			temp=sizeOfAlphaNum(start),
+			pushToOutput(start,temp),
+			i+=temp;
+			break;
+
+		case '\"':	
+			temp=sizeOfString(start),
+			pushToOutput(start,temp),
+			i+=temp;
+			break;
+
+		case '\'':
+			temp=sizeOfCharConst(start),
+			pushToOutput(start,temp),
+			i+=temp;
+			break;
 	}
 	return i;
 }}}
 
-static inline int isAddReturn(char *start){{{
+static inline int addReturn(char *start){{{
 	//checks if at the start of a whitespace terminated ret statement
 	//if so, add the C return statement as well as the constant that follows
-	int i=0;
-
-	//If is qc ret statement
+	//If is qc ret statement and has whitespace for return value
 	if (*start=='r' && start[1]=='e' && start[2]=='t' && isWhitespace(start+3)){
 		//push C return
 		{char *temp="return";pushToOutput(temp,6);}
 		//move past whitespace to constant
-		i+=3;i+=toSymbol(start+i);
-		
-		//TODO: add symbol checker here so that
-		i+=addConstant(start+i);
-		i--;
+		int i=3;i+=toSymbol(start+i);
+		//TODO: add symbol checker here so that variables and functions can be returned.
+		i+=addConstant(start+i);	i--;//decrement needed
 		{char *temp=";";pushToOutput(temp,1);}
+		return i;
 	}
-	return i;
+	return 0;
+}}}
+
+static inline int addBreak(char *start){{{
+	//adds a C "break" from the QC "brk"
+	//needs exactly "brk" and can't be concatenated to other alphanum symbols
+	//without destroying the meaning
+	if (*start=='b' && start[1]=='r' && start[2]=='k' && sizeOfAlphaNum(start)==3){
+		{char *temp="break;";pushToOutput(temp,6);}
+		return 2;
+	}return 0;
+}}}
+
+static inline int addContinue(char *start){{{
+	//adds a C "continue;" from the QC "con"
+	if (*start=='c' && start[1]=='o' && start[2]=='n' && sizeOfAlphaNum(start)==3){
+		{char *temp="continue;";pushToOutput(temp,9);}
+		return 2;
+	}return 0;
+	
+}}}
+
+static inline int addCase(char *start){{{
+	//adds a C "case %const:" from the QC "ca %const"
+	if (*start=='c' && start[1]=='a' && sizeOfAlphaNum(start)==2){
+		{char *temp="case ";pushToOutput(temp,5);}//push initial
+		int i=2;i+=toSymbol(start+i);
+		i+=addConstant(start+i);
+		{char *temp=":";pushToOutput(temp,1);}
+		return --i;//decrement needed
+	}return 0;
+}}}
+
+static inline int addInclude(char *start){{{
+	//adds a C "#include <stdio.h>" or "#include \"custom.h\"" from the QC
+	//"incl <stdio>" or "incl<stdio.h>" or "incl \"custom.h\""
 }}}
 
 static inline int addType(char * start){{{
@@ -746,12 +781,24 @@ int main(int argc, char **argv){{{
 						i+=handleComment(temp);
 						continue;
 
-			case 'r':	{int is=isAddReturn(temp);
-							if (is){i+=is;continue;}}
-			case 'b':	//TODO: implement break keyword		- "brk" in qc
-			case 'c':	//TODO: implement continue keyword	- "con" in qc
+			case 'r':	{	int is=addReturn(temp);	//check for return statment
+							if (is){i+=is;continue;}
+							else {goto symbparse;}	}
+			case 'b':	{	int is=addBreak(temp);	//check for break statement
+							if (is){i+=is;continue;}
+							else {goto symbparse;}	}
+			case 'c':	{	int is=addContinue(temp);//check for continue statement
+							if (is){i+=is;continue;}
+							else{ 
+								is=addCase(temp);//check for case statement
+								if (is){i+=is;continue;}
+							goto symbparse;}}
+						//IDEA: implement ca '1'->'3' to represent the following:
+						//		case '1': case '2': case '3': break;
 			case 'j':	//TODO: implement goto keyword		- "jmp" in qc
 						//IDEA: Make jne, je, jlz, jg, etc to allow for easy if statements.
+			case 'i':	
+			symbparse:
 
 			default:	
 						
