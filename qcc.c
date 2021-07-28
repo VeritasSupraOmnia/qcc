@@ -186,6 +186,82 @@ static inline int pushToOutput(char* symbol,int size){{{
 	return 0;
 }}}
 
+
+static inline int maybeId(char *start){{{
+	//returns whether a current symbol might indicate an
+	//identifier
+	if(((	*start	)<=	0x5a	&&	
+	   (	*start	)>	0x40) 	||
+	   ((	*start	)<=	0x7a	&&	
+	   (	*start	)>	0x60))	return 1;
+	return 0;
+}}}
+
+static inline int isWhitespace(char *start){{{
+	//just tells of the next character is whitespace
+	if(*start==' '||*start=='\n'||*start=='\t')
+		return 1;
+	return 0;
+}}}
+
+static inline int sizeOfAlphaNum(char *start){{{
+	//finds size of alphanumeric symbol
+	int i=0;char c=start[i];
+
+	//while 0-9, a-z or A-Z, then increment
+	while(	(	c	<=	0x5a	&&	c	>	0x40 )	||
+			(	c	<=	0x7a	&&	c	>	0x60 )	||
+			(	c	<=	0x39	&&	c	>=	0x30 )	)
+			i++, c=start[i];	
+			
+	return i;
+}}}
+
+static inline int toSymbol(char *start){{{
+	//Returns byte offset to when the next symbol is,
+	//ignoring spaces, tabs and newlines and adds the
+	//whitespace to the C code.
+	int i=0;char c=start[i];
+	while (c==' '||c=='\t'||c=='\n'){
+	i++;c=start[i];}
+	if((mode_flags&mode_trim_whitespace)==0)
+			pushToOutput(start,i);
+	else pushToOutput(" ",1);
+	return i;//returns the amount to increase the parser increment counter.
+}}}
+
+static inline int sizeOfString(char *start){{{
+	//gets size of string, including quotes and escapes \" properly as well as \\" and \\\"
+	U1 escaped=0;int i=0;
+	while (start[i]!='\"' || (start[i]=='\"' && (escaped!=0))){
+
+		if (start[i]=='\n') {error_flags|=err_string_has_no_end;return 0;}
+
+		//an escape means 1 character skipped exit checking
+		if (escaped){
+			escaped^=escaped;
+			i++;
+			//this needs to be done even during escapes
+			if (start[i]=='\n') {error_flags|=err_string_has_no_end;return 0;}
+		}
+		if (start[i]=='\\') escaped=1;
+		i++;
+
+	}
+	return i;
+}}}
+
+static inline int sizeOfCharConst(char *start){{{
+	//gets size of char const (can be 3 or 4 chars long in source)
+	if (start[1]=='\\'){
+		if (start[3]!='\''){error_flags|=err_char_const_has_no_end;return 0;}
+		return 4;
+	}else{
+		if (start[2]!='\''){error_flags|=err_char_const_has_no_end;return 0;}
+		return 3;
+	}
+}}}
+
 static inline int addPassthrough(char *start){{{
 	//tells the transpiler to pass this string directly to
 	//the C output until it reaches the character pair :}.
@@ -247,80 +323,6 @@ static inline int handleComment(char *start){{{
 	}
 
 	return i;
-}}}
-
-static inline int maybeId(char *start){{{
-	//returns whether a current symbol might indicate an
-	//identifier
-	if(((	*start	)<=	0x5a	&&	
-	   (	*start	)>	0x40) 	||
-	   ((	*start	)<=	0x7a	&&	
-	   (	*start	)>	0x60))	return 1;
-	return 0;
-}}}
-
-static inline int isWhitespace(char *start){{{
-	//just tells of the next character is whitespace
-	if(*start==' '||*start=='\n'||*start=='\t')
-		return 1;
-	return 0;
-}}}
-
-static inline int sizeOfAlphaNum(char *start){{{
-	//finds size of alphanumeric symbol
-	int i=0;char c=start[i];
-
-	//while 0-9, a-z or A-Z, then increment
-	while(	(	c	<=	0x5a	&&	c	>	0x40 )	||
-			(	c	<=	0x7a	&&	c	>	0x60 )	||
-			(	c	<=	0x39	&&	c	>=	0x30 )	)
-			i++, c=start[i];	
-			
-	return i;
-}}}
-
-static inline int toSymbol(char *start){{{
-	//Returns byte offset to when the next symbol is,
-	//ignoring spaces, tabs and newlines and adds the
-	//whitespace to the C code.
-	int i=0;char c=start[i];
-	while (c==' '||c=='\t'||c=='\n'){
-		if((mode_flags&mode_trim_whitespace)==0)
-			pushToOutput(&c,1);
-	i++;c=start[i];}
-	return i;//returns the amount to increase the parser increment counter.
-}}}
-
-static inline int sizeOfString(char *start){{{
-	//gets size of string, including quotes and escapes \" properly as well as \\" and \\\"
-	U1 escaped=0;int i=0;
-	while (start[i]!='\"' || (start[i]=='\"' && (escaped!=0))){
-
-		if (start[i]=='\n') {error_flags|=err_string_has_no_end;return 0;}
-
-		//an escape means 1 character skipped exit checking
-		if (escaped){
-			escaped^=escaped;
-			i++;
-			//this needs to be done even during escapes
-			if (start[i]=='\n') {error_flags|=err_string_has_no_end;return 0;}
-		}
-		if (start[i]=='\\') escaped=1;
-		i++;
-
-	}
-	return i;
-}}}
-
-static inline int sizeOfCharConst(char *start){{{
-	//gets size of char const (can be 3 or 4 chars long in source)
-	if (start[1]=='\\'){
-		if (start[3]!='\''){error_flags|=err_char_const_has_no_end;return 0;}
-		return 4;
-	}else{
-		if (start[2]!='\''){error_flags|=err_char_const_has_no_end;return 0;}
-		return 3;
-	}
 }}}
 
 static inline int addConstant(char *start){{{
@@ -391,12 +393,25 @@ static inline int addContinue(char *start){{{
 static inline int addCase(char *start){{{
 	//adds a C "case %const:" from the QC "ca %const"
 	if (*start=='c' && start[1]=='a' && sizeOfAlphaNum(start)==2){
-		{char *temp="case ";pushToOutput(temp,5);}//push initial
+		{char *temp="case";pushToOutput(temp,4);}//push initial
 		int i=2;i+=toSymbol(start+i);
 		i+=addConstant(start+i);
 		{char *temp=":";pushToOutput(temp,1);}
 		return --i;//decrement needed
 	}return 0;
+}}}
+
+static inline int addGoto(char*start){{{
+	//adds a C "goto %label" from the QC "jmp %label"
+	if (*start=='j' && start[1]=='m' && start[2]=='p' && sizeOfAlphaNum(start)==3){
+		{char *temp="goto";pushToOutput(temp,4);}//push initial
+		int i=3;i+=toSymbol(start+i);
+		int size=sizeOfAlphaNum(start+i);
+		pushToOutput(start+i,size);i+=size;
+		{char *temp=";";pushToOutput(temp,1);}
+		return --i;//decrement needed
+	}return 0;
+
 }}}
 
 static inline int addInclude(char *start){{{
@@ -472,21 +487,6 @@ static inline int addId(char *start){{{
 	//but was, just.
 	pushToOutput(start,i);
 	return i;
-}}}
-
-static inline int addJump(char *start){{{
-	//determines if the next symbol is a jump symbol,
-	//adding the translated value to the result and
-	//returning the qc_code that was jumped over.
-
-	//check the first character to see if any of the jump
-	//symbols are possible
-	switch (*start){
-		case 'g':
-		case 'c':
-		case 'b':
-		case 'r':
-	}
 }}}
 
 int addFuncName(char* symbol,int size){{{
@@ -784,7 +784,8 @@ int main(int argc, char **argv){{{
 			case 'r':	{	int is=addReturn(temp);	//check for return statment
 							if (is){i+=is;continue;}
 							else {goto symbparse;}	}
-			case 'b':	{	int is=addBreak(temp);	//check for break statement
+			case 'b':	
+						{	int is=addBreak(temp);	//check for break statement
 							if (is){i+=is;continue;}
 							else {goto symbparse;}	}
 			case 'c':	{	int is=addContinue(temp);//check for continue statement
@@ -795,7 +796,10 @@ int main(int argc, char **argv){{{
 							goto symbparse;}}
 						//IDEA: implement ca '1'->'3' to represent the following:
 						//		case '1': case '2': case '3': break;
-			case 'j':	//TODO: implement goto keyword		- "jmp" in qc
+			case 'j':	{	int is=addGoto(temp);	//check for goto statement
+					   		if (is){i+=is;continue;}
+					   		else {goto symbparse;}	}
+						//TODO: implement goto keyword		- "jmp" in qc
 						//IDEA: Make jne, je, jlz, jg, etc to allow for easy if statements.
 			case 'i':	
 			symbparse:
