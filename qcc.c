@@ -768,8 +768,8 @@ int main(int argc, char **argv){{{
 						continue;
 
 			case '}':
-						scope--;char *brkt="}";
-						pushToOutput(brkt,1);
+						scope--;
+						pushToOutput(temp,1);
 						continue;
 
 			case '[':
