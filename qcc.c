@@ -729,6 +729,8 @@ int main(int argc, char **argv){{{
 	//main parsing loop{{{
 	for (int i=0;i<strlen(qc_code);i++){
 
+		//State Dependent Parsing{{{
+		
 		//If there's a new arglist and a new scope, that
 		//means that this curly bracket is needed in the C
 		//output.
@@ -754,6 +756,9 @@ int main(int argc, char **argv){{{
 			if (isWhitespace(temp))
 				i+=toSymbol(temp),parse_flags|=prs_ws_sep_sym;
 		}
+		//}}}
+
+		//Main Parsing Switch{{{
 
 		//check for special characters
 		temp=&qc_code[i];
@@ -811,7 +816,10 @@ int main(int argc, char **argv){{{
 			default:	
 						
 		}
-	}//}}}
+	}
+	//}}}
+
+	//}}}
 
 	//output{{{
 	
