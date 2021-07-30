@@ -186,7 +186,6 @@ static inline int pushToOutput(char* symbol,int size){{{
 	return 0;
 }}}
 
-
 static inline int maybeId(char *start){{{
 	//returns whether a current symbol might indicate an
 	//identifier
@@ -367,7 +366,7 @@ static inline int addCase(char *start){{{
 static inline int addGoto(char*start){{{
 	//adds a C "goto %label" from the QC "jmp %label"
 	if (*start=='j' && start[1]=='m' && start[2]=='p' && sizeOfAlphaNum(start)==3){
-		{char *temp="goto";pushToOutput(temp,4);}//push initial
+		{char *temp="goto";pushToOutput(temp,4);}
 		int i=3;i+=toSymbol(start+i);
 		int size=sizeOfAlphaNum(start+i);
 		pushToOutput(start+i,size);i+=size;
@@ -379,7 +378,17 @@ static inline int addGoto(char*start){{{
 
 static inline int addInclude(char *start){{{
 	//adds a C "#include <stdio.h>" or "#include \"custom.h\"" from the QC
-	//"incl <stdio>" or "incl<stdio.h>" or "incl \"custom.h\""
+	//"incl <stdio>" or "incl <stdio.h>" or "incl \"custom.h\""
+	
+	if (*start=='i' && start[1]=='n' && start[2]=='c' && start[3]=='l' && 
+			sizeOfAlphaNum(start)==4){
+		{char *temp="#include";pushToOutput(temp,8);}
+		int i=4;	i+=toSymbol(start+i);	int size=0;
+		while (0==isWhitespace(start+i+size)) size++;
+		pushToOutput(start+i,size);
+		return i+size-1;
+	}
+	return 0;
 }}}
 
 static inline int addType(char * start){{{
@@ -495,18 +504,6 @@ static inline int handleComment(char *start){{{
 	return i;
 }}}
 
-int printSyntaxErrorLocation(char *start,int local_loc){{{
-	//TODO: make this print the area around the current
-	//location, if there is room, so that people can
-	//understand where the syntax error is.
-	
-	//This OUGHT to be accompanied by a message describing
-	//the error, why it happened, what might fix it, as well
-	//as exactly where it is and in which file. This isn't
-	//related to the todo but I thought I should include it
-	//to remind myself.
-}}}
-
 static inline int addArgs(char * start){{{
 	//add argument declarations
 	int i=0;
@@ -605,6 +602,18 @@ static inline int addArgs(char * start){{{
 //}}}
 
 //Misc utilities{{{
+
+int printSyntaxErrorLocation(char *start,int local_loc){{{
+	//TODO: make this print the area around the current
+	//location, if there is room, so that people can
+	//understand where the syntax error is.
+	
+	//This OUGHT to be accompanied by a message describing
+	//the error, why it happened, what might fix it, as well
+	//as exactly where it is and in which file. This isn't
+	//related to the todo but I thought I should include it
+	//to remind myself.
+}}}
 
 int dumpToFile(){{{
 	//dumps the whole output to a given file
@@ -810,8 +819,11 @@ int main(int argc, char **argv){{{
 					   		else {goto symbparse;}	}
 						//TODO: implement goto keyword		- "jmp" in qc
 						//IDEA: Make jne, je, jlz, jg, etc to allow for easy if statements.
-			case 'i':	
-			symbparse:
+			case 'i':	{	int is=addInclude(temp);
+							if (is){i+=is;continue;}
+							else {goto symbparse;} }
+
+			symbparse:	//Do generic (non keyword) symbol parsing
 
 			default:	
 						
