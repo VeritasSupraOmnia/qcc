@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include "local_header.h"
 int main(int argc,char **argv){
 	//this is a line comment
 	return 0;

@@ -1,3 +1,5 @@
+incl <stdio.h>
+incl "local_header.h"
 {#dmain[#dargc#ppbargv]
 	;this is a line comment
 	ret 0
