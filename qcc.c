@@ -208,20 +208,15 @@ int result_size=	0;
 
 //data structures{{{
 
-//struct enumeration{{{
-
-typedef struct func_identifier{	//{{{
-
-}fid;							//}}}
-
-//}}}
+//data structures are cringe and a gateway to OOP.
+//Don't use them for almost anything, retard!
 
 //}}}
 
 //Primary utilities{{{
 
 static inline int pushSymbol(char *symbol,int size,int type){{{
-	//pushes a s
+	//pushes a symbol to the symbol table/block array
 }}}
 
 static inline int pushToOutput(char* symbol,int size){{{
