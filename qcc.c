@@ -56,13 +56,18 @@ sflgsz *symb_flags;//same count as "symbol" detailed in section: Main data
 //parsing flags {{{
 //for keeping the runtime state of the parser
 
+
 //tell the parser to increase scope after the next iteration
 //because a new curly bracket is needed
 #define prs_new_scope		0x01
 //tell the parser that a new argument or indentifier is
 //needed and should do those transformation operations.
 #define prs_new_args		0x02
+
 #define prs_new_id			0x04
+//tell the parser that a new sexpr, which might just be a contiguous symbol
+#define prs_new_sexpr		0x1000
+#define prs_in_sexpr		0x2000
 //tell the parser that the current state has occurred after
 //whitespace
 #define prs_ws_sep_sym		0x08
@@ -82,6 +87,7 @@ sflgsz *symb_flags;//same count as "symbol" detailed in section: Main data
 //tells the parser that an error has occurred.
 #define prs_fail			0x800
 
+
 #define pflgsz U2
 static pflgsz parse_flags=0;
 //for delaying flags by one iteration
@@ -91,7 +97,6 @@ static pflgsz parse_next_flags=0;
 	//the regular flag array, which copies each index up one
 	//for a sort of rolling source state control.
 
-int scope=0;
 //}}}
 
 //mode flags{{{
@@ -150,10 +155,51 @@ static char * defined_cc;	//defined c compiler for automatic compilation
 char * plastId;
 int slastId;
 
-//Arrays for keeping track of symbols and their use
+//Arrays for keeping track of symbols, which are striped within the main array
+//to create sub arrays of their starting symbols. symbol_array[0] is a
+//lowercase "a". symbol_array[1] is a lowercase "b" and so on. This can be
+//easily calculated and the size of the array is simply checked when a new
+//symbol push location is calculated and the array is re-alloced only when the
+//wanted index is out of bounds for a number of 4096 byte blocks that are
+//needed to take the allocation to a safe buffer amount past the current
+//location, probably at least a page ahead of the number.
 char ** symbol_array;
-int symbol_array_size;//main array size
-int *symbol_array_string_sizes;
+//symbol table size
+int symbol_array_size;
+
+//I might want to add a non-striped bleed over 3d char array so that past a
+//certain memory usage or stripe usage disparity, symbols only increase the
+//memory for themselves and not others, which might not use them.
+
+//where the actual storage happens - in blocks of 4096 which each have a type
+//when the pushSymbol function doesn't have enough space left in the current
+//block for the symbol's type, a new current block is created and the fill, bit
+//and current block arrays are updated.
+char * block_array;
+
+//these are bit arrays of which blocks contain which type of symbol
+/* var		-	variable blocks
+ * arr		-	local array blocks                                               
+ * pnt		-	generic pointer blocks which function very similarly to array blocks 
+ * str		-	struct blocks                                                    
+ * fun		-	function blocks                                                  
+ * typ		-	type assignment blocks                                           
+ * def		-	no-argument C macros                                             
+ * dfn		-	argument C macros - "fn" like function                           
+ * mac		-	qcc macros                                                       
+ */
+//bit arrays detailing which blocks have which 
+U8 ** block_bit_array;
+//current block for any given type
+char ** current_type_block;
+//malloced array detailing the current fill of each current block per type, in
+//above order.
+U2 * block_fill_array;
+
+
+//for tracking sexpr level
+int sexpr_level=0;
+int scope=0;
 
 //For saving output code to.
 char * result_code;
@@ -173,6 +219,10 @@ typedef struct func_identifier{	//{{{
 //}}}
 
 //Primary utilities{{{
+
+static inline int pushSymbol(char *symbol,int size,int type){{{
+	//pushes a s
+}}}
 
 static inline int pushToOutput(char* symbol,int size){{{
 	//increases the size of the output allocation while
@@ -210,7 +260,8 @@ static inline int sizeOfAlphaNum(char *start){{{
 	//while 0-9, a-z or A-Z, then increment
 	while(	(	c	<=	0x5a	&&	c	>	0x40 )	||
 			(	c	<=	0x7a	&&	c	>	0x60 )	||
-			(	c	<=	0x39	&&	c	>=	0x30 )	)
+			(	c	<=	0x39	&&	c	>=	0x30 )	||
+				c	==	'_'	)
 			i++, c=start[i];	
 			
 	return i;
@@ -450,10 +501,11 @@ static inline int addId(char *start){{{
 	int i=0; 
 
 	//while alphabetical, increment
-	while(	((start[i]&0x5f)<=0x5a	&&	
-			(start[i]&0x5f)>0x40) 	||
-			((start[i]&0x7f)<=0x7a	&&	
-			(start[i]&0x7f)>0x60))	i++;
+	while(	(start[i]<=0x5a	&&	
+			start[i]>0x40 	||
+			(start[i]<=0x7a	&&	
+			start[i]>0x60)	||
+			start[i]=='_'))	i++;
 
 	//remind the parser that it is no longer in "ID" state
 	//but was, just.
@@ -504,7 +556,7 @@ static inline int handleComment(char *start){{{
 	return i;
 }}}
 
-static inline int addArgs(char * start){{{
+static inline int addArgs(char *start){{{
 	//add argument declarations
 	int i=0;
 
@@ -596,6 +648,39 @@ static inline int addArgs(char * start){{{
 	#undef argstate_inlist
 	#undef argstate_done_ID
 }}}
+
+
+static inline int addIf(char *start){{{
+	//adds an if statement to the C out
+	if (*start=='i' && start[1]=='f' && sizeOfAlphaNum(start)==2){
+		{char *temp="if";pushToOutput(temp,2);}
+		int i=2;i+=toSymbol(start+i);
+		parse_flags|=prs_new_sexpr;
+		return i-1;
+	}
+	return 0;
+}}}
+
+static inline int addElse(char *start){{{
+	//adds an else statement to the C out
+}}}
+
+static inline int addSwitch(char *start){{{
+	//adds a switch statement to the C out
+}}}
+
+static inline int addFor(char *start){{{
+	//adds a for loop to the C out
+}}}
+
+static inline int addWhile(char *start){{{
+	//adds a while loop to the C out
+}}}
+
+static inline int addDo(char *start){{{
+	//adds a do statement to the C out
+}}}
+
 
 //}}}
 
@@ -744,15 +829,15 @@ int main(int argc, char **argv){{{
 		//means that this curly bracket is needed in the C
 		//output.
 		if(parse_flags&prs_was_arg&&parse_flags&prs_new_scope){
-			char *c="{";pushToOutput(c,1),parse_flags^=prs_was_arg;}
+			char *c="{";pushToOutput(c,1),parse_flags^=prs_was_arg|prs_new_scope;}
 
 		//For receiving symbol data for this iteration to
 		//add to the result_code string.
 		char *temp=&qc_code[i];
 
 		//for dealing with whitespace
-		if (isWhitespace(temp))
-			i+=toSymbol(temp),parse_flags|=prs_ws_sep_sym;
+		if (isWhitespace(temp)){
+			i+=toSymbol(temp),parse_flags|=prs_ws_sep_sym;}
 
 		if (parse_flags & prs_new_id && maybeId(temp)){
 			//If a previous declaration says to expect a new
@@ -762,9 +847,19 @@ int main(int argc, char **argv){{{
 
 			parse_flags|=prs_was_id;
 			parse_flags^=prs_new_id;
-			if (isWhitespace(temp))
-				i+=toSymbol(temp),parse_flags|=prs_ws_sep_sym;
 		}
+
+		temp=&qc_code[i];
+		if (isWhitespace(temp))
+			i+=toSymbol(temp),parse_flags|=prs_ws_sep_sym;
+
+		if (parse_flags&prs_new_sexpr){
+			{char *c="(";pushToOutput(c,1);}
+			if (*temp =='(') sexpr_level++;
+			else parse_flags|=prs_in_sexpr;
+			parse_flags^=prs_new_sexpr;
+		}
+
 		//}}}
 
 		//Main Parsing Switch{{{
@@ -777,16 +872,23 @@ int main(int argc, char **argv){{{
 						parse_flags|=prs_new_id;
 						continue;
 			case '{': 	
-						if(*(temp+1)==':'){
-							i+=addPassthrough(temp+2)+1;
+						//do passthrough
+						if(*(temp+1)==':'){	i+=addPassthrough(temp+2)+1;
 							continue;}
 						
-				 		parse_flags|=prs_new_scope;
-						scope++;
+				 		parse_flags|=prs_new_scope;scope++;
 						continue;
 
 			case '}':
 						scope--;
+						pushToOutput(temp,1);
+						continue;
+			case '(':	
+						sexpr_level++;
+						pushToOutput(temp,1);
+						continue;
+			case ')':	
+						sexpr_level--;
 						pushToOutput(temp,1);
 						continue;
 
@@ -817,12 +919,13 @@ int main(int argc, char **argv){{{
 			case 'j':	{	int is=addGoto(temp);	//check for goto statement
 					   		if (is){i+=is;continue;}
 					   		else {goto symbparse;}	}
-						//TODO: implement goto keyword		- "jmp" in qc
 						//IDEA: Make jne, je, jlz, jg, etc to allow for easy if statements.
 			case 'i':	{	int is=addInclude(temp);
 							if (is){i+=is;continue;}
-							else {goto symbparse;} }
-
+							else { is=addIf(temp);
+								if(is){i+=is;continue;}
+							goto symbparse;}}
+goto symbparse;
 			symbparse:	//Do generic (non keyword) symbol parsing
 
 			default:	
