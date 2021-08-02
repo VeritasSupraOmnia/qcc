@@ -15,14 +15,19 @@
 #include <string.h>
 #include <strings.h>
 #include <string.h>
+//for mremap
+#define __USE_GNU 1
+#include <sys/mman.h>
 //}}}
 
-//custom type names {{{
+//custom defines {{{
 #define kib(a) (a*1024)
 #define U2 unsigned short 
 #define U4 unsigned int 
 #define U1 unsigned char 
 #define U8 unsigned long long 
+//for eazy math
+#define page_size 4096
 //}}}
 
 //Flags {{{
@@ -164,12 +169,15 @@ int slastId;
 //needed to take the allocation to a safe buffer amount past the current
 //location, probably at least a page ahead of the number.
 char ** symbol_array;
-//symbol table size
-int symbol_array_size;
+//symbol table index count
+int symbol_array_ic;
 
 //I might want to add a non-striped bleed over 3d char array so that past a
 //certain memory usage or stripe usage disparity, symbols only increase the
-//memory for themselves and not others, which might not use them.
+//memory for themselves and not others, which might not use them. Memory usage
+//is not much of a problem for a basic symbol table, however, so such measures
+//are only really an idea for if I make striped storage in the future for some
+//more advanced calculations.
 
 //where the actual storage happens - in blocks of 4096 which each have a type
 //when the pushSymbol function doesn't have enough space left in the current
@@ -177,6 +185,7 @@ int symbol_array_size;
 //and current block arrays are updated.
 char * block_array;
 
+#define sym_types 9
 //these are bit arrays of which blocks contain which type of symbol
 /* var		-	variable blocks
  * arr		-	local array blocks                                               
@@ -196,6 +205,8 @@ char ** current_type_block;
 //above order.
 U2 * block_fill_array;
 
+U8 block_count;
+
 
 //for tracking sexpr level
 int sexpr_level=0;
@@ -214,6 +225,30 @@ int result_size=	0;
 //}}}
 
 //Primary utilities{{{
+
+static inline void *qmm(size_t order){{{
+	//quick memory map - used to get whole pages for allocation 
+	return mmap(NULL,4096<<order,PROT_READ|PROT_WRITE,MAP_ANON,-1,0);
+}}}
+
+static inline void *qmr(void* addr,size_t old_order,size_t new_order){{{
+	//quick memory remap
+	return mremap(addr,4096<<old_order,4096<<new_order,MREMAP_MAYMOVE);
+}}}
+
+static inline int initSymbolContext(){
+	//creates the basic symbol table and initial allocation
+	
+	//I don't need to free this because I'm not a nigger who cares about niche
+	//OSs that don't free memory automatically.
+
+	//create symbol array
+	symbol_array=qmm(1);
+	symbol_array_ic=page_size/sizeof(char**);//4096/8 is 512
+
+	//create each 
+	
+}
 
 static inline int pushSymbol(char *symbol,int size,int type){{{
 	//pushes a symbol to the symbol table/block array
