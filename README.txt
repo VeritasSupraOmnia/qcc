@@ -145,52 +145,11 @@ C:	int v=3;
 	Use the defining curly brackets (it's not scope like in C), to tell the
 	transpiler that you are trying to define something.
 
-QC:	3 #dv
-C:	int v=3;
-
-	Enabling even shorter declarative assignment, this functions off the
-	same principle as forth postfixes. Through the fact that a valid
-	constant followed directly by a valid identifier wihout whitespace can
-	allow the assumption of an assignment.
-	
-	
 QC:	3#dv
 C:	int v=3;
 
-	This is a way to shorten the previous example's declare statement.
-	Because it's started by an immediate constant, the transpiler knows that
-	the first character that is not valid for the type of contstart, or a
-	constant ending character like the last '"' in a string, marks the first
-	character of the idendtifier which keeps going until the end of
-	whitespace.
-
-QC:	3v
-C:	v=2:
-
-	Assignment is, as a general rule, is the value first, then the location,
-	as this allows forth-like postfix rules that enable easy omission. It
-	isn't forth, only forth-like, because sub-word tokens have real
-	meanings.
-
-	If the variable is already declared, and the single variable identifier
-	cannot ever be confused to be part of the constant, using the same
-	constant-then-identifier assignment relationship is valid. This is
-	possible because alternate numbers forms, while prefixed with letters,
-	are not postfixed with letters, by qcc law, and numbers cannot contain
-	any letter besides the ones needed to describe them, so as soon as a
-	character outside of that list enters the parser, the number is assumed
-	finished instead of erroring out on a "bad number" like C compilers
-	would.
-
-	This is bad for error checking but qc is meant for quick prototyping vel
-	refactoring.
-
-QC:	3v+
-C:	v+=3;
-
-	This shows the plus equal version of the aformentioned assignment. ID
-	checking stops at all characters which are illegal to put into an
-	identifer.
+	Enabling even shorter declarative assignment, this functions based off the
+	fact that all data is declared with a non alphabetical symbol. 
 
 QC:	3v-
 C:	v-=3;
@@ -240,13 +199,16 @@ QC:	{#newstructn . 2}{3n.uquadval}
 C:	newstruct n;n.wordval=2;n.uquadval=3
 	
 
-QC:	#newstructn 1 2 3
+QC:	#newstructn 1_2_3
 C:	newstruct n;n.quadval=1;n.wordval=2;n.uquadval=3;
 
 QC:	#newstruct 1 2 3
 C:	newstruct newstruct;newstruct.quadval=1;newstruct.wordval=2;newstruct.uquadval=3;
 	
-QC:	#di,8
+QC:	'di 8
+C:	int i[8];
+
+QC:	8'di
 C:	int i[8];
 	
 	This declares an array of signed, 4byte integers with 8 indexes.  There
@@ -262,17 +224,24 @@ C:	int i[8];
 
 	Multidimensional array declaration
 
-QC:	#di,8,9
+QC:	`di 8_9
 C:	int i[8][9];
+
+QC:	8_9`di
+C:	int i[8][9];
+	
+	The '_' is used to split dimensions of an array and can be used because constants. The dimension parameters MUST not be split by whitespace.
 
 	Multidimensional array initialazation
 
-QC:	#di,8,9	1,..,8 1,..,8 1,..,8
-		1,..,8 1,..,8 1,..,8
-		1,..,8 1,..,8 1,..,8
-C:	int i[8][9]={	{1,2,3,4,5,6,7,8}, {1,2,3,4,5,6,7,8}, {1,2,3,4,5,6,7,8},
-			{1,2,3,4,5,6,7,8}, {1,2,3,4,5,6,7,8}, {1,2,3,4,5,6,7,8},
-			{1,2,3,4,5,6,7,8}, {1,2,3,4,5,6,7,8}, {1,2,3,4,5,6,7,8} }
+QC:	8_9#di`=
+		1,..,9_1,..,9_1,..,9_1,..,9
+		1,..,9_1,..,9_1,..,9_1,..,9 
+		
+C:	int i[8][9]={
+		{1,2,3,4,5,6,7,8},{1,2,3,4,5,6,7,8},{1,2,3,4,5,6,7,8},{1,2,3,4,5,6,7,8},
+		{1,2,3,4,5,6,7,8},{1,2,3,4,5,6,7,8},{1,2,3,4,5,6,7,8},{1,2,3,4,5,6,7,8}}
+		
 
 	The transpiler can know what is what because of the placement of the
 	commas. #di ,8 for example, has whitespace between the comma and the
@@ -343,7 +312,7 @@ Comments:
 		comment block	*;
 Functions:
 	Declaration:
-	{#dtestfunction[#darg1 arg2](ret(+ arg1 arg2))}
+	{$dtestfunction[#darg1 arg2](ret(+ arg1 arg2))}
 	Which would transpile to:
 	int testfunction(int arg1,int arg2){return arg1+arg2};
 
@@ -364,6 +333,19 @@ Functions:
 	for(int i=0;i<100;i++)testfunction(1,2);
 
 	This tells the transpiler that the function is calling 
+
+Expressions:
+	Expressions work exactly the same way they do in C except without needing
+	semicolons.
+
+QC:	i=i|2&&f==3 ret 0
+C:	i=i|2&&f==3;return 0;
+
+	The way C does expressions is pretty much fine with me and I'm not gonna
+	change most of it. What I will change is Turnary operations...
+
+QC:	i?i=4:i=5 ret 0
+C:	i?i=4:(i=5); return 0;
 
 Integration:
 	
