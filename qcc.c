@@ -27,7 +27,8 @@
 #define U1 unsigned char 
 #define U8 unsigned long long 
 //for eazy math
-#define page_size 4096
+#define page_order 0
+#define page_size 4096<<page_order
 //}}}
 
 //Flags {{{
@@ -83,6 +84,8 @@ sflgsz *symb_flags;//same count as "symbol" detailed in section: Main data
 #define prs_was_const		0x20
 #define prs_was_op			0x40
 #define prs_was_arg			0x40
+#define prs_was_return		0x4000
+#define prs_in_const_list	0x8000
 //need semi-colon to end the statement
 #define prs_need_semi		0x100
 //passthrough to C mode
@@ -159,6 +162,8 @@ static char * defined_cc;	//defined c compiler for automatic compilation
 //For adding previous IDs to tracking arrays.
 char * plastId;
 int slastId;
+char * lastConst;
+int lastCosnstS;
 
 //Arrays for keeping track of symbols, which are striped within the main array
 //to create sub arrays of their starting symbols. symbol_array[0] is a
@@ -170,7 +175,10 @@ int slastId;
 //location, probably at least a page ahead of the number.
 char ** symbol_array;
 //symbol table index count
-int symbol_array_ic;
+int symbol_array_alloced;
+//symbol table total fill
+U8 symbol_array_max_fill;
+U8 *symbol_array_total_fill;
 
 //I might want to add a non-striped bleed over 3d char array so that past a
 //certain memory usage or stripe usage disparity, symbols only increase the
@@ -183,7 +191,8 @@ int symbol_array_ic;
 //when the pushSymbol function doesn't have enough space left in the current
 //block for the symbol's type, a new current block is created and the fill, bit
 //and current block arrays are updated.
-char * block_array;
+char ** block_list;
+U8 block_list_size;
 
 #define sym_types 9
 //these are bit arrays of which blocks contain which type of symbol
@@ -197,13 +206,15 @@ char * block_array;
  * dfn		-	argument C macros - "fn" like function                           
  * mac		-	qcc macros                                                       
  */
-//bit arrays detailing which blocks have which 
+//bit arrays detailing which blocks have which types
 U8 ** block_bit_array;
-//current block for any given type
+U8 * block_bit_array_alloced;
+U8 * block_bit_array_fill;
+//current block for every type
 char ** current_type_block;
 //malloced array detailing the current fill of each current block per type, in
 //above order.
-U2 * block_fill_array;
+U2 block_fill_array[sym_types];
 
 U8 block_count;
 
@@ -217,38 +228,88 @@ char * result_code;
 int result_size=	0;
 //}}}
 
-//data structures{{{
+//allocation utilities{{{
 
-//data structures are cringe and a gateway to OOP.
-//Don't use them for almost anything, retard!
+static inline void * mal(size_t size){{{
+	//shortening of malloc for ease of typing
+	return malloc(size);
+}}}
+
+static inline void * malw(size_t size){{{
+	//malloc number of words
+	return malloc(size<<1);
+}}}
+
+static inline void * mald(size_t size){{{
+	//malloc number of doublewords
+	return malloc(size<<2);
+}}}
+
+static inline void * malq(size_t size){{{
+	//malloc number of quadwords
+	return malloc(size<<3);
+}}}
+
+static inline void * cal(size_t nmemb,size_t size){{{
+	//classic calloc but with a shorter invokation
+	return calloc(nmemb,size);
+}}}
+
+static inline void * calb(size_t size){{{
+	//calloc but with bytes
+	return calloc(1,size);
+}}}
+
+static inline void * calw(size_t size){{{
+	//calloc but with words
+	return calloc(2,size);
+}}}
+
+static inline void * cald(size_t size){{{
+	//calloc but with doublewords
+	return calloc(4,size);
+}}}
+
+static inline void * calq(size_t size){{{
+	//calloc but with quadwords
+	return calloc(8,size);
+}}}
 
 //}}}
 
 //Primary utilities{{{
 
-static inline void *qmm(size_t order){{{
-	//quick memory map - used to get whole pages for allocation 
-	return mmap(NULL,4096<<order,PROT_READ|PROT_WRITE,MAP_ANON,-1,0);
-}}}
+//Generic addition and checks{{{
 
-static inline void *qmr(void* addr,size_t old_order,size_t new_order){{{
-	//quick memory remap
-	return mremap(addr,4096<<old_order,4096<<new_order,MREMAP_MAYMOVE);
-}}}
-
-static inline int initSymbolContext(){
+static inline int initSymbolContext(){{{
 	//creates the basic symbol table and initial allocation
 	
 	//I don't need to free this because I'm not a nigger who cares about niche
 	//OSs that don't free memory automatically.
 
 	//create symbol array
-	symbol_array=qmm(1);
-	symbol_array_ic=page_size/sizeof(char**);//4096/8 is 512
+	symbol_array=mal(page_size);
+	symbol_array_alloced=(page_size/sizeof(char**))*sym_types;	//4096/8 is 512
 
-	//create each 
+	//sym array is stiped by symbol type for allocation reasons
+	//each stripe is 64 bytes long to ease cache access while searching 
+	//allocate block array
+	block_list=mal(page_size);
+	block_list_size=page_size/sizeof(char**)*sym_types;
+	block_count=sym_types;
+	for (int i=0; i<sym_types; i++)
+		block_list[i]=mal(page_size);
 	
-}
+	//allocate block array
+	block_bit_array=malq(sym_types);
+	block_bit_array_alloced=malq(sym_types);
+	block_bit_array_fill=calq(sym_types);
+	for (int i=0; i<sym_types; i++)
+		block_bit_array[i]=mal(page_size),
+		block_bit_array_alloced[i]=64/*bits*/ * (page_size<<3);
+
+	return 0;
+}}}
 
 static inline int pushSymbol(char *symbol,int size,int type){{{
 	//pushes a symbol to the symbol table/block array
@@ -263,7 +324,7 @@ static inline int pushToOutput(char* symbol,int size){{{
 	result_code=	realloc(result_code,result_size+size);
 	bcopy(symbol,&result_code[result_size],size);
 	result_size+=	size;
-	return 0;
+	return size;
 }}}
 
 static inline int maybeId(char *start){{{
@@ -281,6 +342,37 @@ static inline int isWhitespace(char *start){{{
 	if(*start==' '||*start=='\n'||*start=='\t')
 		return 1;
 	return 0;
+}}}
+
+static inline int findWhitespace(char * start){{{
+	//finds the relative location of the next instance of whitespace
+	int i=0,char c;
+	do		c=start[i],i++;
+	while	(c!=' '&&c!='\n'&&c!='\t');
+	return i;
+}}}
+
+static inline int findDeclarator(char *start){{{
+	//searches foreward and finds the first instant of a declaration symbol
+	int i=0,char c;
+	do		c=start[i],i++;
+	while	(c!='#'&&c!='`'&&c!='$');
+	return i;
+}}}
+
+int isOperator(char *start){{{
+	//check whether this position represents an operator or not
+	
+	//IDEA: syntax to do the below with just a simple list
+	int out;char c=*start;
+	c=='='||c=='+'||c=='-'||c=='/'||c=='&'||c=='*'||c=='?'||c=='|'||c=='^'||c=='&'||c=='!'||c=='<'||c=='>'||c==':'||c==','||c=='.'||c=='('||c==')'?out=1:(out^=out);
+
+	return out;
+}}}
+
+int pushOperator(char *start){{{
+	int i=0;
+	return i;
 }}}
 
 static inline int sizeOfAlphaNum(char *start){{{
@@ -302,12 +394,20 @@ static inline int toSymbol(char *start){{{
 	//ignoring spaces, tabs and newlines and adds the
 	//whitespace to the C code.
 	int i=0;char c=start[i];
-	while (c==' '||c=='\t'||c=='\n'){
-	i++;c=start[i];}
-	if((mode_flags&mode_trim_whitespace)==0)
-			pushToOutput(start,i);
-	else pushToOutput(" ",1);
+	while (c==' '||c=='\t'||c=='\n')
+		i++,c=start[i];
+	(mode_flags&mode_trim_whitespace)==0
+		?pushToOutput(start,i)
+		:pushToOutput(" ",1);
 	return i;//returns the amount to increase the parser increment counter.
+}}}
+
+static inline int findNextSymbol(char *start){{{
+	//for basic symbol calculations
+	int i=0;char c=start[i];
+	while (c==' '||c=='\t'||c=='\n')
+		i++,c=start[i];
+	return i;
 }}}
 
 static inline int sizeOfString(char *start){{{
@@ -341,8 +441,65 @@ static inline int sizeOfCharConst(char *start){{{
 		return 3;
 	}
 }}}
+//}}}
 
 //Symbol addition{{{
+static inline int addArrayInit(char *start){{{
+
+}}}
+
+static inline int addType(char * start){{{
+
+	//Start is pointer at offset of the new type
+	//declaration. Directly adds the type, with a following
+	//space, to the output allocation.
+	
+	//TODO: make a type lookup table 
+	//(qcc type string array to c type string array)
+	//This way I can expand the amount of types dynamically,
+	//as I should do.
+	U1 c;U1 pointers=0;int i=0;
+	do{
+		U1 * temp;//temp is removed after the do-while
+		c=start[i];
+		switch(start[i]){
+			case 'b': temp="char ";					break;
+			case 'w': temp="word ";					break;
+			case 'd': temp="int ";					break;
+			case 'q': temp="long long ";			break;
+			case 'B': temp="unsigned char ";		break;
+			case 'W': temp="unsigned word ";		break;
+			case 'D': temp="unsigned int ";			break;
+			case 'Q': temp="unsigned long long ";	break;
+			case '*':
+			case 'p': pointers++,i++;				continue;//goto do
+			default: break;
+		}
+	i++;
+
+	//parse_flags|=prs_was_op;
+	pushToOutput(temp,strlen(temp));
+	
+	//keep going while there is no endcap and these are valid
+	}while (	
+				//while no type is defined
+			(	c!='b'	&&	c!='B'	&&
+				c!='w'	&&	c!='W'	&&
+				c!='d'	&&	c!='D'	&&
+				c!='q'	&&	c!='Q'	&&
+				c!='h'	&&	c!='f'	&&
+				c!='l'	&&	c!='v')	&&
+				//and modifiers are still being defined
+				(c=='x' ||	c=='y'	||
+				 c=='z'	||	c=='p')
+			);
+
+	//add pointers to 
+	U1 *temp="*";
+	for(U1 j=0;j<pointers;j++)
+		pushToOutput(temp,1);
+	return i;//out;
+}}}
 
 static inline int addPassthrough(char *start){{{
 	//tells the transpiler to pass this string directly to
@@ -355,13 +512,12 @@ static inline int addPassthrough(char *start){{{
 	//resulting code
 
 	int i=0;
-	while (	//keep iterating while not at the end
-			!(start[i]==':' && start[i+1]=='}')){
+	//keep iterating while not at the end
+	while (!(start[i]==':' && start[i+1]=='}'))
 		i++;
-	}
 
 	//push unadulterated code direcly
-	pushToOutput(start,i);
+	pushToOutput(start,i),
 
 	//skip the passthrough escape sequence
 	i+=2;
@@ -370,8 +526,47 @@ static inline int addPassthrough(char *start){{{
 
 static inline int addConstant(char *start){{{
 	//adds a constant to the output C code
-	int i=0,temp;
-	switch (*start){
+	int i=0;
+	
+
+	i=	*start>=0x30 && *start<=0x39
+	  		?sizeOfAlphaNum(start)
+	  	:(*start=='\"'
+	  		?i=sizeOfString(start)
+	  	:(*start=='\''
+	  		?i=sizeOfCharConst(start)
+	  	:0));
+
+	int temp,doDimensionLoop;
+	
+	i+=	i	
+		?lastConst=start,//constant is absolute at this point
+		 start[i]=='#'//constant prefixing makes me do this
+
+			?lastConstS=i-1,	
+		 	 i+=1,
+			 i+=addType(start+i),
+			 pushToOutput(";",1)
+			:i
+		:(start[i]=='_'
+			?i=findDeclarator(start),
+			 lastConstS=i-1,
+			 start[i]=='`'
+				?i+=addType(start+i)
+				:(
+
+			 
+		):0;
+
+
+	doImpliedEqual=	parse_flags&prs_was_id &&
+					parse_flags&prs_new_args==0
+		?1	:0;
+
+	i&&doImpliedEqual
+		?pushToOutput((char*)"=",1):0;
+
+/*st:	switch (*start){
 		
 		//cases '0' to '9'
 		case '0': case '1': case '2': case '3': case '4':
@@ -384,16 +579,23 @@ static inline int addConstant(char *start){{{
 
 		case '\"':	
 			temp=sizeOfString(start),
+			doImpliedEqual?pushToOutput((char*)"=",1):0;
 			pushToOutput(start,temp),
 			i+=temp;
 			break;
 
 		case '\'':
 			temp=sizeOfCharConst(start),
+			doImpliedEqual?pushToOutput((char*)"=",1):0;
 			pushToOutput(start,temp),
 			i+=temp;
 			break;
-	}
+	}*/
+
+	i	?parse_flags|=prs_was_const,
+		 lastConst=start,lastCosnstS=i
+		:(i=i);
+		
 	return i;
 }}}
 
@@ -401,17 +603,28 @@ static inline int addReturn(char *start){{{
 	//checks if at the start of a whitespace terminated ret statement
 	//if so, add the C return statement as well as the constant that follows
 	//If is qc ret statement and has whitespace for return value
-	if (*start=='r' && start[1]=='e' && start[2]=='t' && isWhitespace(start+3)){
+
+	//this is the easiest way to check for a small string's equivalence
+	char str[3]="ret";
+	for (int i=0;i<3;i++) str[i]&=start[i];
+	int i;
+	i=strncmp(str,"ret",3) && isWhitespace(start+3)
+		?pushToOutput("return",6),
+		 parse_flags|=prs_was_return,
+		 toSymbol(start+3)+3
+		:0;
+	return i;
+/*	if (*start=='r' && start[1]=='e' && start[2]=='t' && isWhitespace(start+3)){
 		//push C return
 		{char *temp="return";pushToOutput(temp,6);}
 		//move past whitespace to constant
 		int i=3;i+=toSymbol(start+i);
-		//TODO: add symbol checker here so that variables and functions can be returned.
+		//TODO: add symbol checker here so that variables and functions can be returned
+		parse_flags|=prs_was_return;
 		i+=addConstant(start+i);	i--;//decrement needed
 		{char *temp=";";pushToOutput(temp,1);}
 		return i;
-	}
-	return 0;
+	}*/
 }}}
 
 static inline int addBreak(char *start){{{
@@ -470,57 +683,6 @@ static inline int addInclude(char *start){{{
 		return i+size-1;
 	}
 	return 0;
-}}}
-
-static inline int addType(char * start){{{
-
-	//Start is pointer at offset of the new type
-	//declaration. Directly adds the type, with a following
-	//space, to the output allocation.
-	
-	//TODO: make a type lookup table 
-	//(qcc type string array to c type string array)
-	//This way I can expand the amount of types dynamically,
-	//as I should do.
-	U1 c;U1 pointers=0;int i=0;
-	do{
-		U1 * temp;//temp is removed after the do-while
-		c=start[i];
-		switch(start[i]){
-			case 'b': temp="char ";					break;
-			case 'w': temp="word ";					break;
-			case 'd': temp="int ";					break;
-			case 'q': temp="long long ";			break;
-			case 'B': temp="unsigned char ";		break;
-			case 'W': temp="unsigned word ";		break;
-			case 'D': temp="unsigned int ";			break;
-			case 'Q': temp="unsigned long long ";	break;
-			case 'p': pointers++,i++;				continue;//goto do
-			default: break;
-		}
-	i++;
-	//parse_flags|=prs_was_op;
-	pushToOutput(temp,strlen(temp));
-	
-	//keep going while there is no endcap and these are valid
-	}while (	
-				//while no type is defined
-			(	c!='b'	&&	c!='B'	&&
-				c!='w'	&&	c!='W'	&&
-				c!='d'	&&	c!='D'	&&
-				c!='q'	&&	c!='Q'	&&
-				c!='h'	&&	c!='f'	&&
-				c!='l'	&&	c!='v')	&&
-				//and modifiers are still being defined
-				(c=='x' ||	c=='y'	||
-				 c=='z'	||	c=='p')
-			);
-
-	//add pointers to 
-	U1 *temp="*";
-	for(U1 j=0;j<pointers;j++)
-		pushToOutput(temp,1);
-	return i;//out;
 }}}
 
 static inline int addId(char *start){{{
@@ -679,6 +841,13 @@ static inline int addArgs(char *start){{{
 	#undef argstate_done_ID
 }}}
 
+static inline int addVariable(char *start){{{Wed 04 Aug 2021 02:51:34 AM
+	//adds variables to the C source
+	int i=0;
+	parse_flags&prs_was_const
+		?
+
+}}}
 
 static inline int addIf(char *start){{{
 	//adds an if statement to the C out
@@ -897,69 +1066,67 @@ int main(int argc, char **argv){{{
 		//check for special characters
 		temp=&qc_code[i];
 		switch(*temp){ 
-			case '#':
-						i+=addType(temp+1);
+			//declare function
+			case '$':	
+			//declare variable
+			case '#':	i+=addType(temp+1),
 						parse_flags|=prs_new_id;
 						continue;
-			case '{': 	
-						//do passthrough
-						if(*(temp+1)==':'){	i+=addPassthrough(temp+2)+1;
-							continue;}
-						
-				 		parse_flags|=prs_new_scope;scope++;
-						continue;
-
-			case '}':
-						scope--;
+			case '{': 	temp[1]==':'	
+							?i+=addPassthrough(temp+2)+1
+							:(parse_flags|=prs_new_scope,scope++);
+				 		continue;
+			case '}':	scope--,
 						pushToOutput(temp,1);
 						continue;
-			case '(':	
-						sexpr_level++;
+			case '(':	sexpr_level++;
 						pushToOutput(temp,1);
 						continue;
-			case ')':	
-						sexpr_level--;
+			case ')':	sexpr_level--,
 						pushToOutput(temp,1);
 						continue;
-
-			case '[':
-						i+=addArgs(temp+1);
+			case '[':	i+=addArgs(temp+1),
 						parse_flags|=prs_was_arg;
 						continue;
-
-			case ';':	
-						i+=handleComment(temp);
+			case ';':	i+=handleComment(temp);
 						continue;
-
-			case 'r':	{	int is=addReturn(temp);	//check for return statment
-							if (is){i+=is;continue;}
-							else {goto symbparse;}	}
-			case 'b':	
-						{	int is=addBreak(temp);	//check for break statement
-							if (is){i+=is;continue;}
-							else {goto symbparse;}	}
-			case 'c':	{	int is=addContinue(temp);//check for continue statement
-							if (is){i+=is;continue;}
-							else{ 
-								is=addCase(temp);//check for case statement
-								if (is){i+=is;continue;}
-							goto symbparse;}}
+			case 'r':{	int is=addReturn(temp);	//check for return statment
+						if (is){i+=is;continue;}
+						goto symbparse;					}
+			case 'b':{	int is=addBreak(temp);		//check for break statement
+						if (is){i+=is;continue;}
+						goto symbparse;					}
+			case 'c':{	int is=addContinue(temp);	//check for continue statement
+						if (is){i+=is;continue;}
+						is=addCase(temp);			//check for case statement
+						if (is){i+=is;continue;}
+						goto symbparse;					}
 						//IDEA: implement ca '1'->'3' to represent the following:
 						//		case '1': case '2': case '3': break;
-			case 'j':	{	int is=addGoto(temp);	//check for goto statement
-					   		if (is){i+=is;continue;}
-					   		else {goto symbparse;}	}
-						//IDEA: Make jne, je, jlz, jg, etc to allow for easy if statements.
-			case 'i':	{	int is=addInclude(temp);
-							if (is){i+=is;continue;}
-							else { is=addIf(temp);
-								if(is){i+=is;continue;}
-							goto symbparse;}}
-goto symbparse;
-			symbparse:	//Do generic (non keyword) symbol parsing
-
+			case 'j':{	int is=addGoto(temp);	//check for goto statement
+					   	if (is){i+=is;continue;}
+					   	goto symbparse;					}
+						//IDEA: Make jne, je, jlz, jg, etc to allow for easy if
+						//statements.
+			case 'i':{	int is=addInclude(temp);
+						if (is){i+=is;continue;}
+						is=addIf(temp);
+						if(is){i+=is;continue;}
+						goto symbparse;					}
+			symbparse:	
+					 	//variable checking
+					 	i+=addConstant(temp),	temp=qc_code+i,
+						i+=toSymbol(temp),		temp=qc_code+i,
+/*					
+					{	int sz=sizeOfAlphaNum(temp);
+						i+=pushToOutput(temp,sz),
+						temp=qc_code+i;					}
+						int *operator=temp+sz+findNextSymbol(temp+sz);
+						operator
+							?setOperator(temp+sz+):;	
+						i+=sz; continue;			
+*/
 			default:	
-						
 		}
 	}
 	//}}}
